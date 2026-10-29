@@ -35,7 +35,15 @@ data class WorkspaceFile(
     val uri: android.net.Uri,
     val name: String,
     val isDirectory: Boolean,
-    val size: Long?
+    val size: Long?,
+    val lastModified: Long? = null
+)
+
+data class ProjectWorkspace(
+    val uri: android.net.Uri,
+    val name: String,
+    val termuxPath: String,
+    val lastOpenedAt: Long
 )
 
 data class OpenDocument(
@@ -75,6 +83,7 @@ data class AppState(
     val currentDiff: String = "",
     val workspacePath: String = "/data/data/com.termux/files/home",
     val workspaceUri: android.net.Uri? = null,
+    val projects: List<ProjectWorkspace> = emptyList(),
     val files: List<WorkspaceFile> = emptyList(),
     val currentDirectoryUri: android.net.Uri? = null,
     val directoryStack: List<android.net.Uri> = emptyList(),
@@ -89,5 +98,8 @@ data class AppState(
     val terminalTimeoutSeconds: Int = 300,
     val showTerminalConfirmation: Boolean = false,
     val themeMode: String = "system",
+    val accentColor: String = "blue",
+    val textScale: Float = 1f,
+    val transparency: Float = 0.12f,
     val error: String? = null
 )

@@ -4,10 +4,10 @@ Codux is an Android-native Kotlin and Jetpack Compose client for the Codex CLI r
 
 ## Features
 
-- Compose chat with conversation history, streamed assistant replies, cancellation, approval prompts, voice dictation, and system/light/dark appearance.
+- Material 3 chat with conversation history, streamed assistant replies, cancellation, approvals, voice dictation, text-file attachments, Markdown code blocks, and system/light/dark appearance.
 - Local Codex App Server connection over an authenticated WebSocket bound to `127.0.0.1`. The bearer token is generated locally, encrypted with Android Keystore, and written to a private Termux file with mode `600`.
-- SAF project browser and text editor, including nested folders, a 2 MB file limit, a conflict check, temporary writes, backup-and-rename saves, and unified diff previews.
-- Explicitly confirmed Termux commands with streamed output, stdin, cancellation, timeout, and an ongoing session notification.
+- SAF project list and details with search, nested file browsing, import/create/rename/copy/move/delete actions, and a safe text editor with a 2 MB limit, conflict checks, temporary writes, backup-and-rename saves, and unified diff previews.
+- Explicitly confirmed terminal commands with streamed output, stdin, recent-command shortcuts, cancellation, timeout, and an ongoing session notification.
 - GitHub Actions workflow for relevant changes on `main`, pull requests, and manual runs.
 
 ## Build locally
@@ -35,4 +35,4 @@ A workflow run must be observed in GitHub Actions to confirm the build and artif
 4. Open Codux and connect. Android/Termux must grant Codux `com.termux.permission.RUN_COMMAND`.
 5. Select a project folder with the SAF picker. Set the corresponding Termux filesystem path under Settings as the Codex working directory.
 
-The GitHub workflow verifies JVM unit tests and APK compilation. Android-specific behavior, including the document picker and Termux `RUN_COMMAND` permission, still requires validation on a configured Android device. The App Server WebSocket transport is experimental and documented as unsupported for production workloads. Codux binds it to loopback and authenticates the connection; it does not expose an unauthenticated network listener. The separate terminal feature runs outside the Codex sandbox and always requires a user confirmation before starting a command.
+The GitHub workflow verifies JVM unit tests and APK compilation. Android-specific behavior, including SAF provider operations and the Termux `RUN_COMMAND` permission, still requires validation on a configured Android device. Codux currently uses the Termux app as its local Linux execution runtime; the standalone Codex CLI does not list Android as a supported host platform, so Codux does not claim to bundle or run Codex independently of Termux. The App Server WebSocket transport is experimental and documented as unsupported for production workloads. Codux binds it to loopback and authenticates the connection; it does not expose an unauthenticated network listener. Terminal commands run outside the Codex sandbox and always require user confirmation.

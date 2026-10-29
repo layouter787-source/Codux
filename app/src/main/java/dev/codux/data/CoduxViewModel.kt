@@ -27,7 +27,11 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(AppState(
         workspacePath = preferences.getString("workspace_path", "/data/data/com.termux/files/home") ?: "/data/data/com.termux/files/home",
         terminalTimeoutSeconds = preferences.getInt("terminal_timeout", 300),
-        themeMode = preferences.getString("theme_mode", "system") ?: "system"
+        themeMode = preferences.getString("theme_mode", "system") ?: "system",
+        accentColor = preferences.getString("accent_color", "blue") ?: "blue",
+        textScale = preferences.getFloat("text_scale", 1f),
+        transparency = preferences.getFloat("transparency", 0.12f),
+        projects = readProjects()
     ))
     val state: StateFlow<AppState> = _state.asStateFlow()
     private var client: CodexAppServerClient? = null
@@ -37,6 +41,24 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
     private var threadLoadId = 0L
     private val terminalDecoder = Utf8StreamDecoder()
 
+    private fun readProjects(): List<ProjectWorkspace> = runCatching {
+        val rows = JSONArray(preferences.getString("projects", "[]"))
+        (0 until rows.length()).mapNotNull { index ->
+            val row = rows.optJSONObject(index) ?: return@mapNotNull null
+            val uri = runCatching { Uri.parse(row.optString("uri")) }.getOrNull() ?: return@mapNotNull null
+            ProjectWorkspace(uri, row.optString("name", "Projeto"), row.optString("termuxPath", "/data/data/com.termux/files/home"), row.optLong("lastOpenedAt"))
+        }
+    }.getOrDefault(emptyList())
+
+    private fun persistProjects(projects: List<ProjectWorkspace>) {
+        val rows = JSONArray()
+        projects.forEach { project ->
+            rows.put(JSONObject().put("uri", project.uri.toString()).put("name", project.name)
+                .put("termuxPath", project.termuxPath).put("lastOpenedAt", project.lastOpenedAt))
+        }
+        preferences.edit().putString("projects", rows.toString()).apply()
+    }
+
     fun setWorkspacePath(path: String) {
         val normalized = path.trim()
         if (normalized.isBlank() || !normalized.startsWith('/') || normalized.contains('\n') || normalized.contains('\r')) {
@@ -44,13 +66,35 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         preferences.edit().putString("workspace_path", normalized).apply()
-        _state.value = _state.value.copy(workspacePath = normalized, error = null)
+        val projects = _state.value.projects.map { project ->
+            if (project.uri == _state.value.workspaceUri) project.copy(termuxPath = normalized) else project
+        }
+        persistProjects(projects)
+        _state.value = _state.value.copy(workspacePath = normalized, projects = projects, error = null)
     }
 
     fun setThemeMode(mode: String) {
         val safe = mode.takeIf { it in setOf("system", "light", "dark") } ?: "system"
         preferences.edit().putString("theme_mode", safe).apply()
         _state.value = _state.value.copy(themeMode = safe)
+    }
+
+    fun setAccentColor(color: String) {
+        val safe = color.takeIf { it in setOf("blue", "violet", "mint", "orange", "rose") } ?: "blue"
+        preferences.edit().putString("accent_color", safe).apply()
+        _state.value = _state.value.copy(accentColor = safe)
+    }
+
+    fun setTextScale(scale: Float) {
+        val bounded = scale.coerceIn(0.85f, 1.25f)
+        preferences.edit().putFloat("text_scale", bounded).apply()
+        _state.value = _state.value.copy(textScale = bounded)
+    }
+
+    fun setTransparency(value: Float) {
+        val bounded = value.coerceIn(0f, 0.35f)
+        preferences.edit().putFloat("transparency", bounded).apply()
+        _state.value = _state.value.copy(transparency = bounded)
     }
 
     fun setTerminalTimeout(seconds: Int) {
@@ -68,15 +112,111 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         preferences.edit().putString("workspace_tree_uri", uri.toString()).apply()
-        _state.value = _state.value.copy(workspaceUri = uri, currentDirectoryUri = uri, directoryStack = listOf(uri), openDocument = null, error = null)
+        val name = uri.lastPathSegment?.substringAfterLast(':')?.substringAfterLast('/')?.ifBlank { null } ?: "Projeto"
+        val project = ProjectWorkspace(uri, name, _state.value.workspacePath, System.currentTimeMillis())
+        val projects = (_state.value.projects.filterNot { it.uri == uri } + project).sortedByDescending { it.lastOpenedAt }
+        persistProjects(projects)
+        _state.value = _state.value.copy(workspaceUri = uri, projects = projects, currentDirectoryUri = uri, directoryStack = listOf(uri), openDocument = null, error = null)
         listFiles(uri)
     }
 
     fun restoreWorkspaceTree() {
         val text = preferences.getString("workspace_tree_uri", null) ?: return
         val uri = runCatching { Uri.parse(text) }.getOrNull() ?: return
-        _state.value = _state.value.copy(workspaceUri = uri, currentDirectoryUri = uri, directoryStack = listOf(uri))
+        val project = _state.value.projects.firstOrNull { it.uri == uri } ?: ProjectWorkspace(
+            uri = uri,
+            name = uri.lastPathSegment?.substringAfterLast(':')?.substringAfterLast('/')?.ifBlank { null } ?: "Projeto",
+            termuxPath = _state.value.workspacePath,
+            lastOpenedAt = System.currentTimeMillis()
+        )
+        val projects = if (_state.value.projects.any { it.uri == uri }) _state.value.projects else (_state.value.projects + project).sortedByDescending { it.lastOpenedAt }
+        persistProjects(projects)
+        _state.value = _state.value.copy(workspaceUri = uri, projects = projects, currentDirectoryUri = uri, directoryStack = listOf(uri), workspacePath = project.termuxPath)
         listFiles(uri)
+    }
+
+    fun openProject(project: ProjectWorkspace) {
+        val opened = project.copy(lastOpenedAt = System.currentTimeMillis())
+        val projects = (_state.value.projects.filterNot { it.uri == project.uri } + opened).sortedByDescending { it.lastOpenedAt }
+        persistProjects(projects)
+        preferences.edit().putString("workspace_tree_uri", project.uri.toString()).putString("workspace_path", project.termuxPath).apply()
+        _state.value = _state.value.copy(workspaceUri = project.uri, workspacePath = project.termuxPath, projects = projects,
+            currentDirectoryUri = project.uri, directoryStack = listOf(project.uri), openDocument = null, error = null)
+        listFiles(project.uri)
+    }
+
+    fun removeProject(project: ProjectWorkspace) {
+        val projects = _state.value.projects.filterNot { it.uri == project.uri }
+        persistProjects(projects)
+        runCatching {
+            getApplication<Application>().contentResolver.releasePersistableUriPermission(project.uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        if (_state.value.workspaceUri == project.uri) {
+            preferences.edit().remove("workspace_tree_uri").apply()
+            _state.value = _state.value.copy(projects = projects, workspaceUri = null, currentDirectoryUri = null, directoryStack = emptyList(), files = emptyList())
+        } else _state.value = _state.value.copy(projects = projects)
+    }
+
+    fun createProjectItem(name: String, directory: Boolean) {
+        val parent = _state.value.currentDirectoryUri ?: return setError("Abre um projeto antes de criar itens.")
+        viewModelScope.launch {
+            runCatching { projectFiles.create(parent, name, directory) }
+                .onSuccess { listFiles(parent) }
+                .onFailure { setError(it.message ?: "Não foi possível criar o item.") }
+        }
+    }
+
+    fun importProjectFile(sourceUri: Uri) {
+        val parent = _state.value.currentDirectoryUri ?: return setError("Abre um projeto antes de importar ficheiros.")
+        viewModelScope.launch {
+            runCatching { projectFiles.importFile(parent, sourceUri) }
+                .onSuccess { listFiles(parent) }
+                .onFailure { setError(it.message ?: "Não foi possível importar o ficheiro.") }
+        }
+    }
+
+    fun copyProjectItem(file: WorkspaceFile) {
+        val parent = _state.value.currentDirectoryUri ?: return
+        viewModelScope.launch {
+            runCatching { projectFiles.copy(file, parent) }
+                .onSuccess { listFiles(parent) }
+                .onFailure { setError(it.message ?: "Não foi possível copiar o item.") }
+        }
+    }
+
+    fun moveProjectItem(file: WorkspaceFile, destination: Uri) {
+        val source = _state.value.currentDirectoryUri ?: return
+        viewModelScope.launch {
+            runCatching { projectFiles.move(file, source, destination) }
+                .onSuccess { listFiles(source) }
+                .onFailure { setError(it.message ?: "Não foi possível mover o item.") }
+        }
+    }
+
+    fun renameProjectItem(file: WorkspaceFile, name: String) {
+        val parent = _state.value.currentDirectoryUri ?: return
+        viewModelScope.launch {
+            runCatching { projectFiles.rename(file, name) }
+                .onSuccess { renamed ->
+                    val doc = _state.value.openDocument?.takeIf { it.uri == file.uri }?.copy(uri = renamed.uri, name = renamed.name)
+                    _state.value = _state.value.copy(openDocument = doc ?: _state.value.openDocument)
+                    listFiles(parent)
+                }
+                .onFailure { setError(it.message ?: "Não foi possível renomear o item.") }
+        }
+    }
+
+    fun deleteProjectItem(file: WorkspaceFile) {
+        val parent = _state.value.currentDirectoryUri ?: return
+        viewModelScope.launch {
+            runCatching { projectFiles.delete(file) }
+                .onSuccess {
+                    if (_state.value.openDocument?.uri == file.uri) closeDocument()
+                    listFiles(parent)
+                }
+                .onFailure { setError(it.message ?: "Não foi possível apagar o item.") }
+        }
     }
 
     fun listFiles() {
