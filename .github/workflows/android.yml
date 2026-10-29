@@ -39,6 +39,13 @@ jobs:
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Run unit tests
         run: gradle testDebugUnitTest --stacktrace
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codux-unit-test-reports
+          path: app/build/test-results/testDebugUnitTest/*.xml
+          if-no-files-found: ignore
       - name: Build debug APK
         run: gradle assembleDebug
       - uses: actions/upload-artifact@v4
