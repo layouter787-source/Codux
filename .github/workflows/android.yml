@@ -38,7 +38,7 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Run unit tests
-        run: gradle testDebugUnitTest
+        run: gradle testDebugUnitTest --stacktrace
       - name: Build debug APK
         run: gradle assembleDebug
       - uses: actions/upload-artifact@v4
