@@ -48,7 +48,10 @@ jobs:
         run: |
           mkdir -p app/src/main/assets
           if gh release view codux-termux-bootstrap-v1 --repo "$GH_REPO" >/dev/null 2>&1; then
-            gh release download codux-termux-bootstrap-v1 --repo "$GH_REPO" --pattern bootstrap-aarch64.zip --dir app/src/main/assets
+            gh release download codux-termux-bootstrap-v1 --repo "$GH_REPO" --pattern bootstrap-aarch64.zip --pattern termux-bootstrap-manifest.txt --dir app/src/main/assets
+            cd app/src/main/assets
+            grep " bootstrap-aarch64.zip$" termux-bootstrap-manifest.txt | sha256sum --check --status
+            cd - >/dev/null
           fi
       - name: Run unit tests
         run: gradle testDebugUnitTest --stacktrace

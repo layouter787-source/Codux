@@ -35,7 +35,7 @@ jobs:
             unzip -Z1 "$archive" | grep -qx 'SYMLINKS.txt'
           done
           printf 'Codux package: dev.codux\nTermux packages source: 7e1a5db289ad89f97bb295a515ea3096b87eb1cd\nTermux app source reference: 8629e632fcb95da272221be327db653fb24befe9\n' > termux-bootstrap-manifest.txt
-          sha256sum termux-packages/bootstrap-aarch64.zip >> termux-bootstrap-manifest.txt
+          (cd termux-packages && sha256sum bootstrap-aarch64.zip) >> termux-bootstrap-manifest.txt
       - name: Publish versioned bootstrap assets
         env:
           GH_TOKEN: ${{ github.token }}
