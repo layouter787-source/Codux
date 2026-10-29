@@ -41,6 +41,15 @@ jobs:
           packages: platform-tools
       - name: Install Android SDK packages
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
+      - name: Include embedded Termux bootstrap when published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p app/src/main/assets
+          if gh release view codux-termux-bootstrap-v1 --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release download codux-termux-bootstrap-v1 --repo "$GH_REPO" --pattern bootstrap-aarch64.zip --dir app/src/main/assets
+          fi
       - name: Run unit tests
         run: gradle testDebugUnitTest --stacktrace
       - name: Upload unit test reports
