@@ -25,6 +25,7 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
     private val secureTokens = SecureTokenStore(application)
     private val termux = TermuxBridge(application)
     private val projectFiles = ProjectFiles(application)
+    private val workspaceSync = ProjectWorkspaceSync(application)
     private val _state = MutableStateFlow(AppState(
         workspacePath = preferences.getString("workspace_path", embeddedHomePath)?.takeUnless { it.startsWith("/data/data/com.termux/files/") } ?: embeddedHomePath,
         terminalTimeoutSeconds = preferences.getInt("terminal_timeout", 300),
@@ -117,11 +118,13 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         preferences.edit().putString("workspace_tree_uri", uri.toString()).apply()
+        val path = workspaceSync.localPath(uri)
         val name = uri.lastPathSegment?.substringAfterLast(':')?.substringAfterLast('/')?.ifBlank { null } ?: "Projeto"
-        val project = ProjectWorkspace(uri, name, _state.value.workspacePath, System.currentTimeMillis())
+        val project = ProjectWorkspace(uri, name, path, System.currentTimeMillis())
         val projects = (_state.value.projects.filterNot { it.uri == uri } + project).sortedByDescending { it.lastOpenedAt }
         persistProjects(projects)
-        _state.value = _state.value.copy(workspaceUri = uri, projects = projects, currentDirectoryUri = uri, directoryStack = listOf(uri), openDocument = null, error = null)
+        preferences.edit().putString("workspace_path", path).apply()
+        _state.value = _state.value.copy(workspaceUri = uri, workspacePath = path, projects = projects, currentDirectoryUri = uri, directoryStack = listOf(uri), openDocument = null, error = null)
         listFiles(uri)
     }
 
@@ -134,20 +137,31 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
             termuxPath = _state.value.workspacePath,
             lastOpenedAt = System.currentTimeMillis()
         )
-        val projects = if (_state.value.projects.any { it.uri == uri }) _state.value.projects else (_state.value.projects + project).sortedByDescending { it.lastOpenedAt }
+        val path = workspaceSync.localPath(uri)
+        val projectPath = project.copy(termuxPath = path)
+        val projects = if (_state.value.projects.any { it.uri == uri }) _state.value.projects.map { if (it.uri == uri) projectPath else it } else (_state.value.projects + projectPath).sortedByDescending { it.lastOpenedAt }
         persistProjects(projects)
-        _state.value = _state.value.copy(workspaceUri = uri, projects = projects, currentDirectoryUri = uri, directoryStack = listOf(uri), workspacePath = project.termuxPath)
+        _state.value = _state.value.copy(workspaceUri = uri, projects = projects, currentDirectoryUri = uri, directoryStack = listOf(uri), workspacePath = path)
+        preferences.edit().putString("workspace_path", path).apply()
         listFiles(uri)
     }
 
     fun openProject(project: ProjectWorkspace) {
-        val opened = project.copy(lastOpenedAt = System.currentTimeMillis())
+        val opened = project.copy(termuxPath = workspaceSync.localPath(project.uri), lastOpenedAt = System.currentTimeMillis())
         val projects = (_state.value.projects.filterNot { it.uri == project.uri } + opened).sortedByDescending { it.lastOpenedAt }
         persistProjects(projects)
-        preferences.edit().putString("workspace_tree_uri", project.uri.toString()).putString("workspace_path", project.termuxPath).apply()
-        _state.value = _state.value.copy(workspaceUri = project.uri, workspacePath = project.termuxPath, projects = projects,
+        preferences.edit().putString("workspace_tree_uri", project.uri.toString()).putString("workspace_path", opened.termuxPath).apply()
+        _state.value = _state.value.copy(workspaceUri = project.uri, workspacePath = opened.termuxPath, projects = projects,
             currentDirectoryUri = project.uri, directoryStack = listOf(project.uri), openDocument = null, error = null)
-        listFiles(project.uri)
+        prepareProjectWorkspace(project.uri, opened.termuxPath)
+    }
+
+    private fun prepareProjectWorkspace(uri: Uri, path: String) {
+        viewModelScope.launch {
+            runCatching { workspaceSync.fromSaf(uri, path) }
+                .onSuccess { listFiles(uri) }
+                .onFailure { _state.value = _state.value.copy(error = "Não foi possível preparar o projeto para o ambiente integrado: ${it.message}") }
+        }
     }
 
     fun removeProject(project: ProjectWorkspace) {
@@ -510,6 +524,14 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
         val activeClient = client ?: return setError("Liga ao Termux primeiro.")
         startSessionNotification("A preparar a resposta do Codex")
         viewModelScope.launch {
+            val selectedWorkspace = _state.value
+            try {
+                selectedWorkspace.workspaceUri?.let { workspaceSync.fromSaf(it, selectedWorkspace.workspacePath) }
+            } catch (error: Exception) {
+                _state.value = _state.value.copy(isTurnRunning = false, error = "Não foi possível sincronizar o projeto antes da conversa: ${error.message}")
+                stopSessionNotificationIfIdle()
+                return@launch
+            }
             val threadId = _state.value.activeThreadId ?: createThreadAndWait()
             if (threadId == null) {
                 stopSessionNotificationIfIdle()
@@ -683,7 +705,10 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
                 val turn = p.optJSONObject("turn")
                 val status = turn?.optString("status") ?: "completed"
                 val error = turn?.optJSONObject("error")?.optString("message")
-                _state.value = _state.value.copy(isTurnRunning = false, activeTurnId = null, pendingApproval = null, error = if (status == "failed") error else null,
+                val workspace = _state.value
+                val syncError = workspace.workspaceUri?.let { uri -> runCatching { workspaceSync.toSaf(workspace.workspacePath, uri) }.exceptionOrNull() }
+
+                _state.value = _state.value.copy(isTurnRunning = false, activeTurnId = null, pendingApproval = null, error = syncError?.let { "As alterações foram feitas no ambiente integrado, mas não foi possível sincronizá-las para a pasta escolhida: ${it.message}" } ?: if (status == "failed") error else null,
                     messages = if (status == "failed" && !error.isNullOrBlank()) _state.value.messages + ChatMessage(UUID.randomUUID().toString(), MessageRole.SYSTEM, error) else _state.value.messages)
                 stopSessionNotificationIfIdle()
                 loadThreads()
@@ -744,6 +769,10 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
                 appendTerminal(terminalDecoder.finish())
                 val code = p.optInt("exitCode", -1)
                 appendTerminal("\n[processo terminou: código $code]\n")
+                val workspace = _state.value
+                workspace.workspaceUri?.let { uri -> runCatching { workspaceSync.toSaf(workspace.workspacePath, uri) }
+                    .onFailure { setError("O terminal terminou, mas não foi possível sincronizar os ficheiros do projeto: ${it.message}") }
+                }
                 _state.value = _state.value.copy(terminalRunning = false, terminalHandle = null)
                 stopSessionNotificationIfIdle()
             }
