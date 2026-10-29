@@ -23,7 +23,7 @@ jobs:
         run: |
           sed -i 's/^TERMUX_APP__PACKAGE_NAME="com.termux"$/TERMUX_APP__PACKAGE_NAME="dev.codux"/' scripts/properties.sh
           grep -q '^TERMUX_APP__PACKAGE_NAME="dev.codux"$' scripts/properties.sh
-          ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64,arm,i686,x86_64 -f
+          ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64,arm,i686,x86_64
       - name: Validate bootstrap archives and create checksums
         id: manifest
         run: |
