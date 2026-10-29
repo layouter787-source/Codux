@@ -1,72 +1,63 @@
 package dev.codux.data
 
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
+import dev.codux.runtime.EmbeddedTermuxRuntime
+import java.io.File
 import java.net.ServerSocket
+import java.util.concurrent.atomic.AtomicReference
 
-class TermuxBridge(private val context: Context) {
+/** Runs terminal commands and the Codex App Server inside Codux's private Termux runtime. */
+class TermuxBridge(context: Context) {
+    private val runtime = EmbeddedTermuxRuntime(context.applicationContext)
+    private val appServerProcess = AtomicReference<Process?>(null)
+
     data class ServerConnection(val port: Int, val endpoint: String, val token: String)
 
-    fun isInstalled(): Boolean = try {
-        context.packageManager.getPackageInfo("com.termux", 0)
-        true
-    } catch (_: PackageManager.NameNotFoundException) { false }
+    fun isInstalled(): Boolean = runtime.isInstalled()
+    fun isCodexInstalled(): Boolean = File(runtime.prefix, "bin/codex").canExecute()
 
     fun createConnection(token: String): ServerConnection {
         val port = ServerSocket(0).use { it.localPort }
         return ServerConnection(port, "ws://127.0.0.1:$port", token)
     }
 
+    suspend fun installRuntimeIfNeeded() = runtime.installIfNeeded()
+
     fun launchAppServer(connection: ServerConnection, workspacePath: String) {
         require(connection.port in 1024..65535)
-        require(workspacePath.startsWith("/") && !workspacePath.contains('\n'))
-        val home = "${'$'}HOME"
-        val shellPid = "${'$'}${'$'}"
-        val script = """
-            set -eu
-            umask 077
-            mkdir -p "$home/.codux"
-            token=${'$'}(cat)
-            printf '%s' "${'$'}token" > "$home/.codux/app-server-token"
-            chmod 600 "$home/.codux/app-server-token"
-            printf '%s\n' "$shellPid" > "$home/.codux/app-server.pid"
-            exec </dev/null
-            exec codex app-server --listen "${connection.endpoint}" --ws-auth capability-token --ws-token-file "$home/.codux/app-server-token"
-        """.trimIndent()
-        val intent = Intent("com.termux.RUN_COMMAND").apply {
-            setClassName("com.termux", "com.termux.app.RunCommandService")
-            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
-            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
-            putExtra("com.termux.RUN_COMMAND_STDIN", connection.token + "\n")
-            putExtra("com.termux.RUN_COMMAND_WORKDIR", workspacePath)
-            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
-            putExtra("com.termux.RUN_COMMAND_COMMAND_LABEL", "Codux Codex App Server")
-            putExtra("com.termux.RUN_COMMAND_COMMAND_DESCRIPTION", "Servidor local protegido do Codux.")
-        }
-        context.startService(intent)
+        require(isInstalled()) { "O ambiente Termux integrado ainda não está instalado." }
+        require(isCodexInstalled()) { "O Codex CLI ainda não está instalado no ambiente integrado." }
+        stopAppServer()
+        val workdir = File(workspacePath).takeIf { it.isAbsolute && it.isDirectory } ?: runtime.home
+        val tokenFile = File(runtime.home, ".codux/app-server-token")
+        check(tokenFile.parentFile?.mkdirs() == true || tokenFile.parentFile?.isDirectory == true)
+        tokenFile.writeText(connection.token)
+        check(tokenFile.setReadable(false, false) && tokenFile.setWritable(false, false))
+        check(tokenFile.setReadable(true, true) && tokenFile.setWritable(true, true))
+        val script = "exec codex app-server --listen '${connection.endpoint}' --ws-auth capability-token --ws-token-file '${tokenFile.absolutePath}'"
+        val process = ProcessBuilder(runtime.shellPath(), "-lc", script)
+            .directory(workdir)
+            .redirectErrorStream(true)
+            .apply { environment().putAll(runtime.environment(workdir).associate { it.substringBefore('=') to it.substringAfter('=') }) }
+            .start()
+        check(appServerProcess.compareAndSet(null, process)) { "O servidor Codex já está em execução." }
+        Thread({
+            process.inputStream.bufferedReader().useLines { lines -> lines.forEach { android.util.Log.i("CoduxAppServer", it) } }
+            appServerProcess.compareAndSet(process, null)
+        }, "CoduxAppServer-output").apply { isDaemon = true; start() }
     }
 
     fun stopAppServer() {
-        val home = "${'$'}HOME"
-        val script = """
-            set -eu
-            pid=${'$'}(cat "$home/.codux/app-server.pid" 2>/dev/null || true)
-            if [ -n "${'$'}pid" ] && [ -r "/proc/${'$'}pid/cmdline" ]; then
-                cmdline=${'$'}(tr '\000' ' ' < "/proc/${'$'}pid/cmdline" 2>/dev/null || true)
-                case "${'$'}cmdline" in
-                    *"codex app-server"*) kill "${'$'}pid" 2>/dev/null || true ;;
-                esac
-            fi
-            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
-        """.trimIndent()
-        val intent = Intent("com.termux.RUN_COMMAND").apply {
-            setClassName("com.termux", "com.termux.app.RunCommandService")
-            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
-            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
-            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
-            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        appServerProcess.getAndSet(null)?.let { process ->
+            process.destroy()
+            if (process.isAlive) process.destroyForcibly()
         }
-        runCatching { context.startService(intent) }
+        File(runtime.home, ".codux/app-server-token").delete()
+    }
+
+    fun shellPath(): String = runtime.shellPath()
+    fun shellEnvironment(workspacePath: String): Array<String> {
+        val dir = File(workspacePath).takeIf { it.isAbsolute && it.isDirectory } ?: runtime.home
+        return runtime.environment(dir)
     }
 }

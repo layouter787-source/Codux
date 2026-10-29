@@ -206,26 +206,10 @@ private fun CoduxApp(vm: CoduxViewModel = viewModel()) {
         val words = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         if (!words.isNullOrBlank()) prompt = listOf(prompt, words).filter(String::isNotBlank).joinToString(" ")
     }
-    val termuxPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) vm.connectToTermux() else vm.showError("Permite a autorização RUN_COMMAND do Termux nas definições do Android para ligar o Codux.")
-    }
-    val requestTermuxPermission = {
-        if (ContextCompat.checkSelfPermission(context, "com.termux.permission.RUN_COMMAND") == PackageManager.PERMISSION_GRANTED) {
-            vm.connectToTermux()
-        } else {
-            termuxPermissionLauncher.launch("com.termux.permission.RUN_COMMAND")
-        }
-    }
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        requestTermuxPermission()
-    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.connectToTermux() }
     val connectToTermux = {
-        val termuxInstalled = runCatching { context.packageManager.getPackageInfo("com.termux", 0) }.isSuccess
-        when {
-            !termuxInstalled -> vm.showError("Instala e abre o Termux oficial antes de ligar o Codux.")
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED -> notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-            else -> requestTermuxPermission()
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        else vm.connectToTermux()
     }
     LaunchedEffect(Unit) { vm.restoreWorkspaceTree() }
     val requestCloseDocument = {
@@ -369,7 +353,7 @@ private fun CoduxApp(vm: CoduxViewModel = viewModel()) {
                 confirmButton = { TextButton(onClick = { showDiff = false }) { Text("Fechar") } })
         }
         if (state.showTerminalConfirmation) {
-            AlertDialog(onDismissRequest = vm::dismissTerminalConfirmation, title = { Text("Executar comando no Termux?") },
+            AlertDialog(onDismissRequest = vm::dismissTerminalConfirmation, title = { Text("Executar comando no ambiente integrado?") },
                 text = { Text("O comando corre no diretório de trabalho fora do sandbox do Codex. Confirma apenas comandos que reconheces.\n\n${state.terminalCommand}") },
                 confirmButton = { TextButton(onClick = vm::confirmTerminalCommand) { Text("Executar") } },
                 dismissButton = { TextButton(onClick = vm::dismissTerminalConfirmation) { Text("Cancelar") } })
@@ -532,19 +516,6 @@ private fun inlineMarkdown(text: String): AnnotatedString {
 @Composable
 private fun CodeBlock(code: String, language: String) {
     val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
-    val runtime = remember(context) { EmbeddedTermuxRuntime(context) }
-    var localShell by remember { mutableStateOf(false) }
-    if (localShell) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("Terminal integrado", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = { localShell = false }) { Text("App Server") }
-            }
-            EmbeddedTermuxTerminal(runtime, modifier = Modifier.weight(1f).fillMaxWidth())
-        }
-        return
-    }
     var expanded by remember(code) { mutableStateOf(false) }
     Surface(shape = RoundedCornerShape(15.dp), color = if (isSystemInDarkTheme()) Color(0xFF111722) else Color(0xFFF0F3F8),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .35f))) {
@@ -936,7 +907,7 @@ private fun SettingsScreen(
         }
         item {
             SettingSection("PROJETO") {
-                Text("Caminho de trabalho no ambiente Codex", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f))
+                Text("Caminho de trabalho no runtime integrado", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f))
                 OutlinedTextField(value = path, onValueChange = { path = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                     shape = RoundedCornerShape(16.dp), label = { Text("Caminho absoluto") })
                 OutlinedButton(onClick = { onWorkspace(path) }, modifier = Modifier.align(Alignment.End)) { Text("Guardar caminho") }
@@ -948,8 +919,8 @@ private fun SettingsScreen(
                 StatusIndicator(state.connected, state.connectionMessage)
                 Text(if (state.connected) "Codex App Server ativo" else "Codex CLI ainda não ligado", style = MaterialTheme.typography.bodyMedium)
                 if (state.connected) OutlinedButton(onClick = onDisconnect) { Text("Desligar") }
-                else Button(onClick = onConnect, enabled = !state.connecting) { Text(if (state.connecting) "A ligar…" else "Ligar ao Termux") }
-                Text("A execução atual requer Termux oficial, Codex CLI autenticado, permissão RUN_COMMAND e allow-external-apps ativado no Termux.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
+                else Button(onClick = onConnect, enabled = !state.connecting) { Text(if (state.connecting) "A ligar…" else "Ligar ao Codex integrado") }
+                Text("O shell e os processos são executados no runtime Linux privado do Codux. Instala e autentica o Codex CLI nesse ambiente para iniciar o App Server.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
             }
         }
         item {

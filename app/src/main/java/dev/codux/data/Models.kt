@@ -81,7 +81,7 @@ data class AppState(
     val activeTurnId: String? = null,
     val pendingApproval: ApprovalRequest? = null,
     val currentDiff: String = "",
-    val workspacePath: String = "/data/data/com.termux/files/home",
+    val workspacePath: String = "/data/data/dev.codux/files/home",
     val workspaceUri: android.net.Uri? = null,
     val projects: List<ProjectWorkspace> = emptyList(),
     val files: List<WorkspaceFile> = emptyList(),

@@ -25,7 +25,7 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
     private val termux = TermuxBridge(application)
     private val projectFiles = ProjectFiles(application)
     private val _state = MutableStateFlow(AppState(
-        workspacePath = preferences.getString("workspace_path", "/data/data/com.termux/files/home") ?: "/data/data/com.termux/files/home",
+        workspacePath = preferences.getString("workspace_path", "/data/data/dev.codux/files/home") ?: "/data/data/dev.codux/files/home",
         terminalTimeoutSeconds = preferences.getInt("terminal_timeout", 300),
         themeMode = preferences.getString("theme_mode", "system") ?: "system",
         accentColor = preferences.getString("accent_color", "blue") ?: "blue",
@@ -46,7 +46,7 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
         (0 until rows.length()).mapNotNull { index ->
             val row = rows.optJSONObject(index) ?: return@mapNotNull null
             val uri = runCatching { Uri.parse(row.optString("uri")) }.getOrNull() ?: return@mapNotNull null
-            ProjectWorkspace(uri, row.optString("name", "Projeto"), row.optString("termuxPath", "/data/data/com.termux/files/home"), row.optLong("lastOpenedAt"))
+            ProjectWorkspace(uri, row.optString("name", "Projeto"), row.optString("termuxPath", "/data/data/dev.codux/files/home"), row.optLong("lastOpenedAt"))
         }
     }.getOrDefault(emptyList())
 
@@ -301,11 +301,17 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
     fun connectToTermux() {
         if (_state.value.connecting || _state.value.connected) return
         viewModelScope.launch {
-            if (!termux.isInstalled()) {
-                _state.value = _state.value.copy(error = "Instala o Termux oficial e abre-o pelo menos uma vez antes de ligar o Codux.")
+            _state.value = _state.value.copy(connecting = true, connectionMessage = "A preparar o ambiente integrado…", error = null)
+            val runtimeReady = runCatching { termux.installRuntimeIfNeeded() }.isSuccess
+            if (!runtimeReady || !termux.isInstalled()) {
+                _state.value = _state.value.copy(error = "O ambiente Termux integrado ainda não está disponível. Aguarda o bootstrap ARM64 e tenta novamente.")
                 return@launch
             }
-            _state.value = _state.value.copy(connecting = true, connectionMessage = "A iniciar o servidor Codex no Termux…", error = null)
+            _state.value = _state.value.copy(connecting = true, connectionMessage = "A iniciar o servidor Codex integrado…", error = null)
+            if (!termux.isCodexInstalled()) {
+                _state.value = _state.value.copy(connecting = false, error = "O Codex CLI não está instalado no ambiente integrado. Abre Terminal integrado e instala o Codex CLI antes de ligar.")
+                return@launch
+            }
             val token = secureTokens.getOrCreate()
             val savedPort = preferences.getInt("app_server_port", 0)
             var connection = if (savedPort in 1024..65535) TermuxBridge.ServerConnection(savedPort, "ws://127.0.0.1:$savedPort", token) else null
@@ -321,7 +327,7 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
                 try {
                     termux.launchAppServer(connection, _state.value.workspacePath)
                 } catch (error: Exception) {
-                    _state.value = _state.value.copy(connecting = false, error = "Termux recusou iniciar o servidor: ${error.message}")
+                    _state.value = _state.value.copy(connecting = false, error = "Não foi possível iniciar o Codex integrado: ${error.message}")
                     return@launch
                 }
                 for (attempt in 0 until 45) {
@@ -336,11 +342,11 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
                 _state.value = _state.value.copy(
                     connecting = false,
                     connectionMessage = "Sem ligação ao App Server.",
-                    error = "O servidor não respondeu. Confirma em Termux que o Codex CLI está instalado e autenticado e que allow-external-apps=true está ativo."
+                    error = "O servidor não respondeu. Confirma que o Codex CLI está instalado e autenticado no ambiente integrado."
                 )
                 return@launch
             }
-            _state.value = _state.value.copy(connected = true, connecting = false, connectionMessage = "Codex ligado ao Termux.", error = null)
+            _state.value = _state.value.copy(connected = true, connecting = false, connectionMessage = "Codex ligado ao ambiente integrado.", error = null)
             loadThreads()
         }
     }
@@ -367,7 +373,7 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
     fun disconnect() {
         val currentClient = client
         val processHandle = _state.value.terminalHandle
-        _state.value = _state.value.copy(connecting = true, connectionMessage = "A desligar do Termux…")
+        _state.value = _state.value.copy(connecting = true, connectionMessage = "A desligar do ambiente integrado…")
         viewModelScope.launch {
             if (processHandle != null) {
                 runCatching {
@@ -386,7 +392,7 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
             _state.value = _state.value.copy(
                 connected = false,
                 connecting = false,
-                connectionMessage = "Desligado do Termux.",
+                connectionMessage = "Desligado do ambiente integrado.",
                 isTurnRunning = false,
                 activeTurnId = null,
                 pendingApproval = null,
