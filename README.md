@@ -1,38 +1,36 @@
 # Codux
 
-Codux is an Android-native Kotlin and Jetpack Compose client for the Codex CLI running inside Termux. It does not bundle or simulate an AI model.
+Codux is an Android-native Kotlin and Jetpack Compose client for the Codex CLI. The app integrates the Termux terminal emulator and is being migrated to a Termux Linux runtime private to Codux; it does not bundle or simulate an AI model.
 
 ## Features
 
 - Material 3 chat with conversation history, streamed assistant replies, cancellation, approvals, voice dictation, text-file attachments, Markdown code blocks, and system/light/dark appearance.
-- Local Codex App Server connection over an authenticated WebSocket bound to `127.0.0.1`. The bearer token is generated locally, encrypted with Android Keystore, and written to a private Termux file with mode `600`.
+- Codex App Server over an authenticated WebSocket bound to `127.0.0.1`; the capability token is generated locally, encrypted with Android Keystore, and stored in Codux private files.
 - SAF project list and details with search, nested file browsing, import/create/rename/copy/move/delete actions, and a safe text editor with a 2 MB limit, conflict checks, temporary writes, backup-and-rename saves, and unified diff previews.
 - Explicitly confirmed terminal commands with streamed output, stdin, recent-command shortcuts, cancellation, timeout, and an ongoing session notification.
-- GitHub Actions workflow for relevant changes on `main`, pull requests, and manual runs.
+- Termux terminal emulator source modules under their upstream license terms.
 
 ## Build locally
 
-Install JDK 17, Gradle 8.9, Android SDK platform 35, and build tools 35.0.0. Then run:
+Install JDK 17, Gradle 8.9, Android SDK platform 35, build tools 35.0.0, and NDK 29.0.14206865. Then run:
 
 ```sh
 gradle testDebugUnitTest
 gradle assembleDebug
 ```
 
-The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. No APK is installed automatically.
 
 ## GitHub Actions
 
-`.github/workflows/android.yml` runs on pushes to `main` when Android or Gradle build files change, on pull requests with those files, or through `workflow_dispatch`. It installs JDK 17, Gradle 8.9 and Android SDK 35, runs `gradle testDebugUnitTest`, builds with `gradle assembleDebug`, and uploads `codux-debug-apk` plus the unit test reports. It does not sign or publish a production release.
+`.github/workflows/android.yml` runs for relevant pushes to `main`, pull requests, and manual dispatch. It runs unit tests, assembles the debug APK, and uploads the APK and test reports. A published ARM64 Termux bootstrap is included in subsequent APK builds. `.github/workflows/termux-bootstrap.yml` builds that bootstrap for the Codux package path and publishes its source manifest and assets. The bootstrap build is still being validated; until the release asset exists, the integrated shell reports that its runtime is unavailable.
 
-A workflow run must be observed in GitHub Actions to confirm the build and artifact. A push made with GitHub's `GITHUB_TOKEN` may not trigger another workflow; this workflow is intended to run from a normal user push or a manual dispatch.
+## Integrated runtime and Codex CLI
 
-## Connect Termux
+The terminal uses the upstream Termux PTY/emulator libraries in the Codux app. The App Server launcher now targets the private Codux runtime and no longer requests the external Termux `RUN_COMMAND` permission. The embedded ARM64 Linux bootstrap must be available in the APK before shell commands can run. The Codex CLI must also be installed and authenticated inside that runtime before the App Server can start. Codex does not publish an official Android/Termux host target, so runtime compatibility of a CLI build and authenticated App Server operation must be verified on an Android device.
 
-1. Install the official Termux app and open it once.
-2. In Termux, enable `allow-external-apps=true` in `~/.termux/termux.properties`, then restart Termux.
-3. Install and authenticate the Codex CLI in Termux.
-4. Open Codux and connect. Android/Termux must grant Codux `com.termux.permission.RUN_COMMAND`.
-5. Select a project folder with the SAF picker. Set the corresponding Termux filesystem path under Settings as the Codex working directory.
+Projects selected through SAF remain backed by Android document providers. A project path passed to a Linux process must also be accessible from the app's private runtime; a SAF URI alone is not a Linux filesystem path.
 
-The GitHub workflow verifies JVM unit tests and APK compilation. Android-specific behavior, including SAF provider operations and the Termux `RUN_COMMAND` permission, still requires validation on a configured Android device. Codux currently uses the Termux app as its local Linux execution runtime; the standalone Codex CLI does not list Android as a supported host platform, so Codux does not claim to bundle or run Codex independently of Termux. The App Server WebSocket transport is experimental and documented as unsupported for production workloads. Codux binds it to loopback and authenticates the connection; it does not expose an unauthenticated network listener. Terminal commands run outside the Codex sandbox and always require user confirmation.
+## Verification limits
+
+GitHub Actions verifies JVM tests and APK compilation. Device behavior including bootstrap extraction, PTY launch, SAF provider operations, and Codex App Server compatibility requires Android-device validation. Terminal commands run with the app's Android UID and are explicitly confirmed; the App Server is loopback-bound and capability-token authenticated.

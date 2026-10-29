@@ -20,12 +20,13 @@ import java.io.IOException
 import java.util.UUID
 
 class CoduxViewModel(application: Application) : AndroidViewModel(application) {
+    private val embeddedHomePath = java.io.File(application.filesDir, "home").absolutePath
     private val preferences = application.getSharedPreferences("codux_settings", 0)
     private val secureTokens = SecureTokenStore(application)
     private val termux = TermuxBridge(application)
     private val projectFiles = ProjectFiles(application)
     private val _state = MutableStateFlow(AppState(
-        workspacePath = preferences.getString("workspace_path", "/data/data/dev.codux/files/home") ?: "/data/data/dev.codux/files/home",
+        workspacePath = preferences.getString("workspace_path", embeddedHomePath)?.takeUnless { it.startsWith("/data/data/com.termux/files/") } ?: embeddedHomePath,
         terminalTimeoutSeconds = preferences.getInt("terminal_timeout", 300),
         themeMode = preferences.getString("theme_mode", "system") ?: "system",
         accentColor = preferences.getString("accent_color", "blue") ?: "blue",
@@ -46,7 +47,7 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
         (0 until rows.length()).mapNotNull { index ->
             val row = rows.optJSONObject(index) ?: return@mapNotNull null
             val uri = runCatching { Uri.parse(row.optString("uri")) }.getOrNull() ?: return@mapNotNull null
-            ProjectWorkspace(uri, row.optString("name", "Projeto"), row.optString("termuxPath", "/data/data/dev.codux/files/home"), row.optLong("lastOpenedAt"))
+            ProjectWorkspace(uri, row.optString("name", "Projeto"), row.optString("termuxPath", embeddedHomePath).let { if (it.startsWith("/data/data/com.termux/files/")) embeddedHomePath else it }, row.optLong("lastOpenedAt"))
         }
     }.getOrDefault(emptyList())
 
@@ -304,7 +305,7 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
             _state.value = _state.value.copy(connecting = true, connectionMessage = "A preparar o ambiente integrado…", error = null)
             val runtimeReady = runCatching { termux.installRuntimeIfNeeded() }.isSuccess
             if (!runtimeReady || !termux.isInstalled()) {
-                _state.value = _state.value.copy(error = "O ambiente Termux integrado ainda não está disponível. Aguarda o bootstrap ARM64 e tenta novamente.")
+                _state.value = _state.value.copy(connecting = false, connectionMessage = "Runtime integrado indisponível.", error = "O runtime ARM64 ainda não está disponível nesta versão. Aguarda uma versão do Codux que inclua o bootstrap.")
                 return@launch
             }
             _state.value = _state.value.copy(connecting = true, connectionMessage = "A iniciar o servidor Codex integrado…", error = null)
