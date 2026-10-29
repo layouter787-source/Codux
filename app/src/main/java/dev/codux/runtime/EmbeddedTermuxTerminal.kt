@@ -89,6 +89,6 @@ private class EmbeddedTerminalClient(private val context: Context) : TerminalSes
     override fun logInfo(tag: String, message: String) = android.util.Log.i("CoduxTerminal/$tag", message)
     override fun logDebug(tag: String, message: String) = android.util.Log.d("CoduxTerminal/$tag", message)
     override fun logVerbose(tag: String, message: String) = android.util.Log.v("CoduxTerminal/$tag", message)
-    override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) = android.util.Log.e("CoduxTerminal/$tag", message, e)
-    override fun logStackTrace(tag: String, e: Exception) = android.util.Log.e("CoduxTerminal/$tag", "Terminal error", e)
+    override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) { android.util.Log.e("CoduxTerminal/$tag", message, e) }
+    override fun logStackTrace(tag: String, e: Exception) { android.util.Log.e("CoduxTerminal/$tag", "Terminal error", e) }
 }
