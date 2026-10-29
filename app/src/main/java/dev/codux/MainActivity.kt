@@ -108,6 +108,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.codux.data.AppState
 import dev.codux.data.ChatMessage
 import dev.codux.data.CodexThread
+import dev.codux.runtime.EmbeddedTermuxRuntime
+import dev.codux.runtime.EmbeddedTermuxTerminal
 import dev.codux.data.CoduxViewModel
 import dev.codux.data.MessageRole
 import dev.codux.data.ProjectWorkspace
@@ -530,6 +532,19 @@ private fun inlineMarkdown(text: String): AnnotatedString {
 @Composable
 private fun CodeBlock(code: String, language: String) {
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val runtime = remember(context) { EmbeddedTermuxRuntime(context) }
+    var localShell by remember { mutableStateOf(false) }
+    if (localShell) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Terminal integrado", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { localShell = false }) { Text("App Server") }
+            }
+            EmbeddedTermuxTerminal(runtime, modifier = Modifier.weight(1f).fillMaxWidth())
+        }
+        return
+    }
     var expanded by remember(code) { mutableStateOf(false) }
     Surface(shape = RoundedCornerShape(15.dp), color = if (isSystemInDarkTheme()) Color(0xFF111722) else Color(0xFFF0F3F8),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .35f))) {
@@ -818,6 +833,19 @@ private fun TerminalScreen(state: AppState, command: String, onCommand: (String)
     val history = remember { mutableStateListOf<String>() }
     val outputScrollState = rememberScrollState()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val runtime = remember(context) { EmbeddedTermuxRuntime(context) }
+    var localShell by remember { mutableStateOf(false) }
+    if (localShell) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Terminal integrado", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { localShell = false }) { Text("App Server") }
+            }
+            EmbeddedTermuxTerminal(runtime, modifier = Modifier.weight(1f).fillMaxWidth())
+        }
+        return
+    }
     LaunchedEffect(state.terminalOutput) {
         withFrameNanos { }
         outputScrollState.scrollTo(outputScrollState.maxValue)
@@ -826,6 +854,7 @@ private fun TerminalScreen(state: AppState, command: String, onCommand: (String)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Terminal", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = { localShell = true }) { Text("Terminal integrado") }
                 StatusIndicator(state.terminalRunning, if (state.terminalRunning) "Comando em execução" else "Pronto")
             }
             TextButton(onClick = { clipboard.setText(AnnotatedString(state.terminalOutput)) }, enabled = state.terminalOutput.isNotBlank()) {
