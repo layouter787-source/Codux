@@ -34,7 +34,7 @@ class EmbeddedTermuxRuntime(context: Context) {
                     while (true) {
                         val entry = zip.nextEntry ?: break
                         if (entry.name == "SYMLINKS.txt") {
-                            val reader = zip.bufferedReader(Charsets.UTF_8)
+                            val reader = java.io.BufferedReader(java.io.InputStreamReader(zip, Charsets.UTF_8))
                             while (true) {
                                 val line = reader.readLine() ?: break
                                 if (line.isBlank()) continue
