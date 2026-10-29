@@ -52,7 +52,622 @@ class TermuxBridge(private val context: Context) {
         val script = """
             set -eu
             pid=${'$'}(cat "$home/.codux/app-server.pid" 2>/dev/null || true)
-            if [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ]; then
+            if [ -n "${'$'}pid" ] && [ -r "/proc/${'$'}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/${'$'}pid/cmdline" 2>/dev/null || true)
+                case "${'$'}cmdline" in
+                    *"codex app-server"*) kill "${'$'}pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}(tr '\000' ' ' < "/proc/${'
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}(tr '\000' ' ' < "/proc/${'
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}(tr '\000' ' ' < "/proc/${'
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}(tr '\000' ' ' < "/proc/${'
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid" ] && [ -r "/proc/${'
+                cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$cmdline" in
+                    *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
+                esac
+            fi
+            rm -f "$home/.codux/app-server.pid" "$home/.codux/app-server-token"
+        """.trimIndent()
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            setClassName("com.termux", "com.termux.app.RunCommandService")
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", script))
+            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+        runCatching { context.startService(intent) }
+    }
+}
+}pid/cmdline" ]; then
                 cmdline=${'$'}(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
                 case "$cmdline" in
                     *"codex app-server"*) kill "$pid" 2>/dev/null || true ;;
