@@ -90,7 +90,6 @@ class EmbeddedTermuxRuntime(context: Context) {
         return arrayOf(
             "HOME=${home.absolutePath}",
             "PREFIX=${prefix.absolutePath}",
-            "TERMUX__PREFIX=${prefix.absolutePath}",
             "TMPDIR=${File(prefix, "tmp").absolutePath}",
             "PATH=${File(prefix, "bin").absolutePath}:${File(prefix, "bin/applets").absolutePath}:/system/bin",
             "LD_PRELOAD=${File(prefix, "lib/libtermux-exec.so").absolutePath}",

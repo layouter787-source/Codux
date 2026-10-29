@@ -35,6 +35,10 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
         projects = readProjects()
     ))
     val state: StateFlow<AppState> = _state.asStateFlow()
+    init {
+        preferences.edit().putString("workspace_path", _state.value.workspacePath).apply()
+        persistProjects(_state.value.projects)
+    }
     private var client: CodexAppServerClient? = null
     private var eventJob: Job? = null
     private var terminalTimeoutJob: Job? = null

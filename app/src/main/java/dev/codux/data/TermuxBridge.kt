@@ -43,6 +43,7 @@ class TermuxBridge(context: Context) {
         check(appServerProcess.compareAndSet(null, process)) { "O servidor Codex já está em execução." }
         Thread({
             process.inputStream.bufferedReader().useLines { lines -> lines.forEach { android.util.Log.i("CoduxAppServer", it) } }
+            File(runtime.home, ".codux/app-server-token").delete()
             appServerProcess.compareAndSet(process, null)
         }, "CoduxAppServer-output").apply { isDaemon = true; start() }
     }
