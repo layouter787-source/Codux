@@ -43,7 +43,7 @@ fun EmbeddedTermuxTerminal(
     AndroidView(
         modifier = modifier,
         factory = { viewContext ->
-            TerminalView(viewContext).apply {
+            TerminalView(viewContext, null).apply {
                 setTerminalViewClient(client)
                 setTextSize(14)
                 attachSession(session)
@@ -84,11 +84,11 @@ private class EmbeddedTerminalClient(private val context: Context) : TerminalSes
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
     override fun onEmulatorSet() = Unit
 
-    override fun logError(tag: String, message: String) = android.util.Log.e("CoduxTerminal/$tag", message)
-    override fun logWarn(tag: String, message: String) = android.util.Log.w("CoduxTerminal/$tag", message)
-    override fun logInfo(tag: String, message: String) = android.util.Log.i("CoduxTerminal/$tag", message)
-    override fun logDebug(tag: String, message: String) = android.util.Log.d("CoduxTerminal/$tag", message)
-    override fun logVerbose(tag: String, message: String) = android.util.Log.v("CoduxTerminal/$tag", message)
+    override fun logError(tag: String, message: String) { android.util.Log.e("CoduxTerminal/$tag", message) }
+    override fun logWarn(tag: String, message: String) { android.util.Log.w("CoduxTerminal/$tag", message) }
+    override fun logInfo(tag: String, message: String) { android.util.Log.i("CoduxTerminal/$tag", message) }
+    override fun logDebug(tag: String, message: String) { android.util.Log.d("CoduxTerminal/$tag", message) }
+    override fun logVerbose(tag: String, message: String) { android.util.Log.v("CoduxTerminal/$tag", message) }
     override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) { android.util.Log.e("CoduxTerminal/$tag", message, e) }
     override fun logStackTrace(tag: String, e: Exception) { android.util.Log.e("CoduxTerminal/$tag", "Terminal error", e) }
 }
