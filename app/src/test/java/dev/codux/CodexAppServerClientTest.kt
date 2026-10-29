@@ -32,11 +32,14 @@ class CodexAppServerClientTest {
                     "initialized" -> webSocket.send(
                         JSONObject().put("method", "warning").put("params", JSONObject().put("message", "initialized")).toString()
                     )
-                    "test/echo" -> webSocket.send(
-                        JSONObject().put("id", message.opt("id"))
-                            .put("result", JSONObject().put("value", message.optJSONObject("params")?.optString("value")))
-                            .toString()
-                    )
+                    "test/echo" -> {
+                        webSocket.send(
+                            JSONObject().put("id", message.opt("id"))
+                                .put("result", JSONObject().put("value", message.optJSONObject("params")?.optString("value")))
+                                .toString()
+                        )
+                        webSocket.close(1000, "test complete")
+                    }
                 }
             }
         }
