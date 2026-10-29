@@ -11,12 +11,18 @@ import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class CodexAppServerClientTest {
     @Test fun authenticatesInitializesAndRoutesRpcAndNotifications() = runBlocking {
         val server = MockWebServer()
+        val serverClosed = CountDownLatch(1)
         val listener = object : WebSocketListener() {
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                serverClosed.countDown()
+            }
+
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val message = JSONObject(text)
                 when (message.optString("method")) {
@@ -49,6 +55,7 @@ class CodexAppServerClientTest {
             assertEquals("initialized", event.params.optString("message"))
         } finally {
             client.close()
+            serverClosed.await(2, TimeUnit.SECONDS)
             server.shutdown()
         }
     }
