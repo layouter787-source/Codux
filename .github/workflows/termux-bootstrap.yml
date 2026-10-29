@@ -26,6 +26,7 @@ jobs:
           sed -i 's/PACKAGES+=("bzip2")/PACKAGES+=("libbz2")/' scripts/build-bootstraps.sh
           grep -q 'PACKAGES+=("libbz2")' scripts/build-bootstraps.sh
           ! grep -q 'PACKAGES+=("bzip2")' scripts/build-bootstraps.sh
+          chmod a+w .
           ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64
       - name: Validate bootstrap archives and create checksums
         id: manifest
@@ -37,7 +38,7 @@ jobs:
             unzip -t "$archive"
             unzip -Z1 "$archive" | grep -qx 'SYMLINKS.txt'
           done
-          printf 'Codux package: dev.codux\nTermux packages source: 7e1a5db289ad89f97bb295a515ea3096b87eb1cd\nTermux app source reference: 8629e632fcb95da272221be327db653fb24befe9\nBootstrap compatibility patch: use upstream libbz2 package, which provides the bzip2 bootstrap subpackage\n' > termux-bootstrap-manifest.txt
+          printf 'Codux package: dev.codux\nTermux packages source: 7e1a5db289ad89f97bb295a515ea3096b87eb1cd\nTermux app source reference: 8629e632fcb95da272221be327db653fb24befe9\nBootstrap compatibility patch: use upstream libbz2 package, which provides the bzip2 bootstrap subpackage\nRunner output fix: make the checked-out source directory writable by the Termux builder container\n' > termux-bootstrap-manifest.txt
           (cd termux-packages && sha256sum bootstrap-aarch64.zip) >> termux-bootstrap-manifest.txt
       - name: Publish versioned bootstrap assets
         env:
