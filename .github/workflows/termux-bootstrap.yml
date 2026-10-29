@@ -23,19 +23,19 @@ jobs:
         run: |
           sed -i 's/^TERMUX_APP__PACKAGE_NAME="com.termux"$/TERMUX_APP__PACKAGE_NAME="dev.codux"/' scripts/properties.sh
           grep -q '^TERMUX_APP__PACKAGE_NAME="dev.codux"$' scripts/properties.sh
-          ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64,arm,i686,x86_64
+          ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64
       - name: Validate bootstrap archives and create checksums
         id: manifest
         run: |
           set -euo pipefail
           test -f termux-packages/bootstrap-aarch64.zip
-          for arch in aarch64 arm i686 x86_64; do
+          for arch in aarch64; do
             archive="termux-packages/bootstrap-${arch}.zip"
             unzip -t "$archive"
             unzip -Z1 "$archive" | grep -qx 'SYMLINKS.txt'
           done
           printf 'Codux package: dev.codux\nTermux packages source: 7e1a5db289ad89f97bb295a515ea3096b87eb1cd\nTermux app source reference: 8629e632fcb95da272221be327db653fb24befe9\n' > termux-bootstrap-manifest.txt
-          sha256sum termux-packages/bootstrap-{aarch64,arm,i686,x86_64}.zip >> termux-bootstrap-manifest.txt
+          sha256sum termux-packages/bootstrap-aarch64.zip >> termux-bootstrap-manifest.txt
       - name: Publish versioned bootstrap assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,7 +45,7 @@ jobs:
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --title "Codux embedded Termux bootstrap v1" --notes-file termux-bootstrap-manifest.txt
           fi
-          gh release upload "$tag" termux-packages/bootstrap-aarch64.zip termux-packages/bootstrap-arm.zip termux-packages/bootstrap-i686.zip termux-packages/bootstrap-x86_64.zip termux-bootstrap-manifest.txt --clobber
+          gh release upload "$tag" termux-packages/bootstrap-aarch64.zip termux-bootstrap-manifest.txt --clobber
       - uses: actions/upload-artifact@v6
         with:
           name: codux-termux-bootstrap-source-build
