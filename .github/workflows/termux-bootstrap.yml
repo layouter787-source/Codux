@@ -1,6 +1,6 @@
 name: Build embedded Termux runtime
 
-on:
+"on":
   workflow_dispatch:
 
 permissions:
