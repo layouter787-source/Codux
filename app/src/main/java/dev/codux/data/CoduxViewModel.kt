@@ -328,7 +328,7 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
             }
             _state.value = _state.value.copy(connecting = true, connectionMessage = "A iniciar o servidor Codex integrado…", error = null)
             if (!termux.isCodexInstalled()) {
-                _state.value = _state.value.copy(connecting = false, error = "O Codex CLI não está instalado no ambiente integrado. Abre Terminal integrado e instala o Codex CLI antes de ligar.")
+                _state.value = _state.value.copy(connecting = false, error = "O Codex CLI não está presente neste bootstrap. Instala uma versão atualizada do Codux para ativar a integração.")
                 return@launch
             }
             val token = secureTokens.getOrCreate()
@@ -361,7 +361,7 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
                 _state.value = _state.value.copy(
                     connecting = false,
                     connectionMessage = "Sem ligação ao App Server.",
-                    error = "O servidor não respondeu. Confirma que o Codex CLI está instalado e autenticado no ambiente integrado."
+                    error = "O servidor não respondeu. Abre Terminal integrado, executa `codex login --device-auth`, conclui a autenticação no browser e tenta novamente."
                 )
                 return@launch
             }

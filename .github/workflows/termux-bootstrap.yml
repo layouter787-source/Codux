@@ -29,18 +29,21 @@ jobs:
           sed -i 's|mv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_PACKAGES_DIRECTORY/"|mv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_PACKAGES_DIRECTORY/output/"|' scripts/build-bootstraps.sh
           grep -q '$TERMUX_PACKAGES_DIRECTORY/output/' scripts/build-bootstraps.sh
           ! grep -q '$TERMUX_PACKAGES_DIRECTORY/"' scripts/build-bootstraps.sh
-          ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64
+          test -s packages/codex/build.sh
+          grep -q '^TERMUX_PKG_LICENSE="Apache-2.0, MIT"$' packages/codex/build.sh
+          ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64 --add codex
       - name: Validate bootstrap archives and create checksums
         id: manifest
         run: |
           set -euo pipefail
           test -s termux-packages/output/bootstrap-aarch64.zip
-          for arch in aarch64; do
-            archive="termux-packages/output/bootstrap-${arch}.zip"
-            unzip -t "$archive"
-            unzip -Z1 "$archive" | grep -qx 'SYMLINKS.txt'
-          done
-          printf 'Codux package: dev.codux\nTermux packages source: 7e1a5db289ad89f97bb295a515ea3096b87eb1cd\nTermux app source reference: 8629e632fcb95da272221be327db653fb24befe9\nBootstrap compatibility patch: use upstream libbz2 package, which provides the bzip2 bootstrap subpackage\nRunner output fix: write the archive into the Termux builder output directory\n' > termux-bootstrap-manifest.txt
+          unzip -Z1 termux-packages/output/bootstrap-aarch64.zip | grep -qx 'bin/codex'
+          unzip -Z1 termux-packages/output/bootstrap-aarch64.zip | grep -qx 'bin/codex-code-mode-host'
+          unzip -t termux-packages/output/bootstrap-aarch64.zip
+          unzip -Z1 termux-packages/output/bootstrap-aarch64.zip | grep -qx 'SYMLINKS.txt'
+          codex_version="$(sed -n 's/^TERMUX_PKG_VERSION="//; s/"$//' termux-packages/packages/codex/build.sh)"
+          test -n "$codex_version"
+          printf 'Codux package: dev.codux\nTermux packages source: 7e1a5db289ad89f97bb295a515ea3096b87eb1cd\nTermux app source reference: 8629e632fcb95da272221be327db653fb24befe9\nEmbedded Codex CLI package version: %s\nEmbedded Codex CLI license: Apache-2.0 and MIT; upstream notices are included by the Termux package\nBootstrap compatibility patch: use upstream libbz2 package, which provides the bzip2 bootstrap subpackage\nRunner output fix: write the archive into the Termux builder output directory\n' "$codex_version" > termux-bootstrap-manifest.txt
           (cd termux-packages/output && sha256sum bootstrap-aarch64.zip) >> termux-bootstrap-manifest.txt
       - name: Publish versioned bootstrap assets
         env:

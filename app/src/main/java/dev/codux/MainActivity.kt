@@ -920,7 +920,7 @@ private fun SettingsScreen(
                 Text(if (state.connected) "Codex App Server ativo" else "Codex CLI ainda não ligado", style = MaterialTheme.typography.bodyMedium)
                 if (state.connected) OutlinedButton(onClick = onDisconnect) { Text("Desligar") }
                 else Button(onClick = onConnect, enabled = !state.connecting) { Text(if (state.connecting) "A ligar…" else "Ligar ao Codex integrado") }
-                Text("O shell e os processos são executados no runtime Linux privado do Codux. Instala e autentica o Codex CLI nesse ambiente para iniciar o App Server.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
+                Text("O runtime Linux e o Codex CLI ARM64 estão incluídos no Codux. Na primeira utilização, abre Terminal integrado, executa codex login --device-auth, conclui o acesso pelo código no browser e volta aqui para ligar.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
             }
         }
         item {

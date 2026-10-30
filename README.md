@@ -1,6 +1,6 @@
 # Codux
 
-Codux is an Android-native Kotlin and Jetpack Compose client for the Codex CLI. The app integrates the Termux terminal emulator and is being migrated to a Termux Linux runtime private to Codux; it does not bundle or simulate an AI model.
+Codux is an Android-native Kotlin and Jetpack Compose client for Codex. It embeds the Termux terminal emulator and an ARM64 Termux Linux runtime inside Codux's private app storage; a separate Termux installation is not required. It does not bundle or simulate an AI model.
 
 ## Features
 
@@ -23,11 +23,11 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. No APK 
 
 ## GitHub Actions
 
-`.github/workflows/android.yml` runs for relevant pushes to `main`, pull requests, and manual dispatch. It runs unit tests, assembles the debug APK, and uploads the APK and test reports. A published ARM64 Termux bootstrap is included in subsequent APK builds. `.github/workflows/termux-bootstrap.yml` builds that bootstrap for the Codux package path and publishes its source manifest and assets. The bootstrap build is still being validated; until the release asset exists, the integrated shell reports that its runtime is unavailable.
+`.github/workflows/android.yml` runs for relevant pushes to `main`, pull requests, and manual dispatch. It runs unit tests, assembles the debug APK, and uploads the APK and test reports. `.github/workflows/termux-bootstrap.yml` builds the ARM64 bootstrap from pinned Termux package sources and publishes its source manifest and assets. APK builds download the published bootstrap and verify its checksum before packaging it.
 
 ## Integrated runtime and Codex CLI
 
-The terminal uses the upstream Termux PTY/emulator libraries in the Codux app. The App Server launcher now targets the private Codux runtime and no longer requests the external Termux `RUN_COMMAND` permission. The embedded ARM64 Linux bootstrap must be available in the APK before shell commands can run. The Codex CLI must also be installed and authenticated inside that runtime before the App Server can start. Codex does not publish an official Android/Termux host target, so runtime compatibility of a CLI build and authenticated App Server operation must be verified on an Android device.
+The terminal uses upstream Termux PTY/emulator libraries and a private Termux runtime inside Codux. The ARM64 bootstrap includes the Android-patched Codex CLI package maintained by the Termux project, so users do not need to install another terminal app or manually install the CLI. On first use, open **Terminal integrado** and run `codex login --device-auth`; complete the displayed device-code sign-in in a browser, then return to Codux and connect. Authentication remains the user’s own Codex account and is stored in Codux’s private app data. The runtime currently targets ARM64 Android devices; other ABIs do not receive the embedded bootstrap.
 
 Projects selected through SAF remain backed by Android document providers. A project path passed to a Linux process must also be accessible from the app's private runtime; a SAF URI alone is not a Linux filesystem path.
 

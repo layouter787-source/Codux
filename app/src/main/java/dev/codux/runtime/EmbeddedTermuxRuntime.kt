@@ -18,7 +18,10 @@ class EmbeddedTermuxRuntime(context: Context) {
     val home: File get() = File(filesDir, "home")
     val bash: File get() = File(prefix, "bin/bash")
 
-    fun isInstalled(): Boolean = bash.isFile && File(prefix, "etc/termux-bootstrap.version").isFile
+    fun isInstalled(): Boolean {
+        val marker = File(prefix, "etc/termux-bootstrap.version")
+        return bash.isFile && File(prefix, "bin/codex").canExecute() && marker.isFile && marker.readText() == "Codux embedded Termux bootstrap v2\n"
+    }
 
     suspend fun installIfNeeded() = withContext(Dispatchers.IO) {
         if (isInstalled()) return@withContext
@@ -75,7 +78,7 @@ class EmbeddedTermuxRuntime(context: Context) {
             }
             val bootstrapInfo = File(staging, "etc/termux-bootstrap.version")
             check(bootstrapInfo.parentFile?.mkdirs() == true || bootstrapInfo.parentFile?.isDirectory == true)
-            bootstrapInfo.writeText("Codux embedded Termux bootstrap v1\n")
+            bootstrapInfo.writeText("Codux embedded Termux bootstrap v2\n")
             deleteOwnedTree(prefix)
             check(staging.renameTo(prefix)) { "Não foi possível ativar o prefixo Termux." }
             check(home.mkdirs() || home.isDirectory) { "Não foi possível criar o diretório pessoal do terminal." }
@@ -98,6 +101,7 @@ class EmbeddedTermuxRuntime(context: Context) {
             "TERM=xterm-256color",
             "SHELL=${bash.absolutePath}",
             "TERMUX__HOME=${home.absolutePath}",
+            "CODEX_HOME=${File(home, ".codex").absolutePath}",
             "PREFIX=${prefix.absolutePath}",
             "ANDROID_DATA=/data",
             "ANDROID_ROOT=/system"
