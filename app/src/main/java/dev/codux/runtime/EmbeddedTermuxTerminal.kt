@@ -18,8 +18,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -31,6 +34,7 @@ import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import java.io.File
+import kotlinx.coroutines.CancellationException
 
 /** Displays the upstream Termux PTY terminal backed by Codux's private prefix. */
 @Composable
@@ -39,13 +43,40 @@ fun EmbeddedTermuxTerminal(
     workingDirectory: File = runtime.home,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    if (!runtime.isInstalled()) {
+    var installed by remember(runtime) { mutableStateOf(runtime.isInstalled()) }
+    var failure by remember(runtime) { mutableStateOf<String?>(null) }
+    // Instala o runtime sozinho ao abrir o terminal; não depende de ligar ao Codex primeiro.
+    LaunchedEffect(runtime, installed) {
+        if (!installed) {
+            try {
+                runtime.installIfNeeded()
+                installed = runtime.isInstalled()
+                if (!installed) {
+                    failure = "O bootstrap embutido não contém o Codex CLI. Reconstrói o bootstrap (workflow Build embedded Termux runtime) e gera o APK novamente."
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                failure = error.message ?: "Falha ao instalar o ambiente Linux integrado."
+            }
+        }
+    }
+    if (!installed) {
         Box(modifier) {
-            Text("O ambiente Linux integrado ainda não foi instalado nesta versão do Codux.")
+            Text(failure ?: "A instalar o ambiente Linux integrado…")
         }
         return
     }
+    TerminalContent(runtime, workingDirectory, modifier)
+}
+
+@Composable
+private fun TerminalContent(
+    runtime: EmbeddedTermuxRuntime,
+    workingDirectory: File,
+    modifier: Modifier
+) {
+    val context = LocalContext.current
     val client = remember(context) { EmbeddedTerminalClient(context) }
     val session = remember(runtime, workingDirectory.absolutePath) {
         // argv[0] precisa ser o nome do shell com '-' na frente para iniciar um login shell.
