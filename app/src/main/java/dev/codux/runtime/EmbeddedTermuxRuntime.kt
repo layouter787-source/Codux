@@ -20,11 +20,16 @@ class EmbeddedTermuxRuntime(context: Context) {
 
     fun isInstalled(): Boolean {
         val marker = File(prefix, "etc/termux-bootstrap.version")
-        return bash.isFile && File(prefix, "bin/codex").canExecute() && marker.isFile && marker.readText() == "Codux embedded Termux bootstrap v2\n"
+        return bash.isFile && File(prefix, "bin/codex").canExecute() && marker.isFile && marker.readText() == BOOTSTRAP_MARKER
     }
 
     suspend fun installIfNeeded() = withContext(Dispatchers.IO) {
-        if (isInstalled()) return@withContext
+        if (isInstalled()) {
+            // Garante pastas que o runtime espera mesmo em instalações anteriores.
+            runCatching { prepareRuntimeDirectories(prefix) }
+            runCatching { home.mkdirs() }
+            return@withContext
+        }
         val asset = bootstrapAsset() ?: error("O bootstrap Termux ainda não foi incluído para esta arquitetura Android.")
         val staging = File(filesDir, "usr-staging")
         deleteOwnedTree(staging)
@@ -76,9 +81,11 @@ class EmbeddedTermuxRuntime(context: Context) {
                 check(link.parentFile?.isDirectory == true) { "A pasta do link Termux não existe." }
                 Os.symlink(target, link.absolutePath)
             }
+            prepareRuntimeDirectories(staging)
             val bootstrapInfo = File(staging, "etc/termux-bootstrap.version")
             check(bootstrapInfo.parentFile?.mkdirs() == true || bootstrapInfo.parentFile?.isDirectory == true)
-            bootstrapInfo.writeText("Codux embedded Termux bootstrap v2\n")
+            bootstrapInfo.writeText(BOOTSTRAP_MARKER)
+            // Somente o prefixo é substituído: home (credenciais do Codex, ~/.codex) é preservada.
             deleteOwnedTree(prefix)
             check(staging.renameTo(prefix)) { "Não foi possível ativar o prefixo Termux." }
             check(home.mkdirs() || home.isDirectory) { "Não foi possível criar o diretório pessoal do terminal." }
@@ -90,25 +97,53 @@ class EmbeddedTermuxRuntime(context: Context) {
 
     fun environment(workdir: File = home): Array<String> {
         require(workdir.isAbsolute && (workdir == filesDir || workdir.path.startsWith(filesDir.path + "/") || workdir.exists()))
-        return arrayOf(
-            "HOME=${home.absolutePath}",
-            "PREFIX=${prefix.absolutePath}",
-            "TMPDIR=${File(prefix, "tmp").absolutePath}",
-            "PATH=${File(prefix, "bin").absolutePath}:${File(prefix, "bin/applets").absolutePath}:/system/bin",
-            "LD_PRELOAD=${File(prefix, "lib/libtermux-exec.so").absolutePath}",
-            "LANG=en_US.UTF-8",
-            "LC_ALL=en_US.UTF-8",
-            "TERM=xterm-256color",
-            "SHELL=${bash.absolutePath}",
-            "TERMUX__HOME=${home.absolutePath}",
-            "CODEX_HOME=${File(home, ".codex").absolutePath}",
-            "PREFIX=${prefix.absolutePath}",
-            "ANDROID_DATA=/data",
-            "ANDROID_ROOT=/system"
+        val env = linkedMapOf(
+            "HOME" to home.absolutePath,
+            "PREFIX" to prefix.absolutePath,
+            "TMPDIR" to File(prefix, "tmp").absolutePath,
+            "PATH" to File(prefix, "bin").absolutePath + ":" + File(prefix, "bin/applets").absolutePath + ":/system/bin",
+            "LANG" to "en_US.UTF-8",
+            "LC_ALL" to "en_US.UTF-8",
+            "TERM" to "xterm-256color",
+            "COLORTERM" to "truecolor",
+            "SHELL" to bash.absolutePath,
+            "TERMUX__HOME" to home.absolutePath,
+            "TERMUX__PREFIX" to prefix.absolutePath,
+            "TERMUX__ROOTFS" to filesDir.absolutePath,
+            "CODEX_HOME" to File(home, ".codex").absolutePath
         )
+        preloadLibrary()?.let { env["LD_PRELOAD"] = it.absolutePath }
+        val certificates = File(prefix, "etc/tls/cert.pem")
+        if (certificates.isFile) env["SSL_CERT_FILE"] = certificates.absolutePath
+        val certificateDirectory = File(prefix, "etc/tls/certs")
+        if (certificateDirectory.isDirectory) env["SSL_CERT_DIR"] = certificateDirectory.absolutePath
+        env["ANDROID_ROOT"] = System.getenv("ANDROID_ROOT") ?: "/system"
+        env["ANDROID_DATA"] = System.getenv("ANDROID_DATA") ?: "/data"
+        // O terminal embutido (TerminalSession) não herda o ambiente do app, então repassa o que o Android define.
+        ANDROID_PASSTHROUGH.forEach { name -> System.getenv(name)?.let { env[name] = it } }
+        return env.map { (name, value) -> "$name=$value" }.toTypedArray()
     }
 
     fun shellPath(): String = bash.absolutePath
+
+    /** Biblioteca LD_PRELOAD do termux-exec; o nome novo (2.x) tem prioridade sobre o link legado. */
+    private fun preloadLibrary(): File? =
+        listOf("lib/libtermux-exec-ld-preload.so", "lib/libtermux-exec.so")
+            .map { File(prefix, it) }
+            .firstOrNull { it.exists() }
+
+    private fun prepareRuntimeDirectories(root: File) {
+        val tmp = File(root, "tmp")
+        check(tmp.mkdirs() || tmp.isDirectory) { "Não foi possível criar a pasta temporária do runtime." }
+        Os.chmod(tmp.absolutePath, 448) // 0700
+        runCatching {
+            val resolv = File(root, "etc/resolv.conf")
+            if (!resolv.exists()) {
+                resolv.parentFile?.mkdirs()
+                resolv.writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\n")
+            }
+        }
+    }
 
     private fun bootstrapAsset(): String? {
         val arch = Build.SUPPORTED_ABIS.firstOrNull() ?: return null
@@ -142,5 +177,19 @@ class EmbeddedTermuxRuntime(context: Context) {
             Files.deleteIfExists(node.toPath())
         }
         remove(target)
+    }
+
+    private companion object {
+        const val BOOTSTRAP_MARKER = "Codux embedded Termux bootstrap v2\n"
+        val ANDROID_PASSTHROUGH = listOf(
+            "ANDROID_ART_ROOT",
+            "ANDROID_I18N_ROOT",
+            "ANDROID_RUNTIME_ROOT",
+            "ANDROID_TZDATA_ROOT",
+            "ANDROID_STORAGE",
+            "BOOTCLASSPATH",
+            "DEX2OATBOOTCLASSPATH",
+            "EXTERNAL_STORAGE"
+        )
     }
 }
