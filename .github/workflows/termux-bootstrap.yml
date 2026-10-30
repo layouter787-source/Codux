@@ -70,32 +70,7 @@ jobs:
           for required in bin/bash bin/codex bin/codex-code-mode-host SYMLINKS.txt; do
             grep -qx "$required" bootstrap-files.txt || { echo "::error::bootstrap sem $required"; exit 1; }
           done
-          grep -Eq '^lib/libtermux-exec(-ld-preload)?\.so          codex_version="$(sed -n 's/^TERMUX_PKG_VERSION="\(.*\)"$/\1/p' termux-packages/packages/codex/build.sh)"
-          test -n "$codex_version"
-          printf 'Codux package: dev.codux\nTermux packages source: 7e1a5db289ad89f97bb295a515ea3096b87eb1cd\nTermux app source reference: 8629e632fcb95da272221be327db653fb24befe9\nEmbedded Codex CLI package version: %s\nEmbedded Codex CLI license: Apache-2.0 and MIT; upstream notices are included by the Termux package\nBootstrap compatibility patch: use upstream libbz2 package, which provides the bzip2 bootstrap subpackage\nRunner output fix: write the archive into the Termux builder output directory\n' "$codex_version" > termux-bootstrap-manifest.txt
-          (cd termux-packages/output && sha256sum bootstrap-aarch64.zip) >> termux-bootstrap-manifest.txt
-      - name: Keep the built archive for inspection
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: codux-termux-bootstrap-zip
-          path: termux-packages/output/bootstrap-aarch64.zip
-          if-no-files-found: ignore
-      - name: Publish versioned bootstrap assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          tag=codux-termux-bootstrap-v1
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --title "Codux embedded Termux bootstrap v1" --notes-file termux-bootstrap-manifest.txt
-          fi
-          gh release upload "$tag" termux-packages/output/bootstrap-aarch64.zip termux-bootstrap-manifest.txt --clobber
-      - uses: actions/upload-artifact@v6
-        with:
-          name: codux-termux-bootstrap-source-build
-          path: termux-bootstrap-manifest.txt
- bootstrap-files.txt || { echo "::error::bootstrap sem biblioteca termux-exec"; exit 1; }
+          grep -Eq '^lib/libtermux-exec(-ld-preload)?\.so$' bootstrap-files.txt || { echo "::error::bootstrap sem biblioteca termux-exec"; exit 1; }
           grep -qx 'etc/tls/cert.pem' bootstrap-files.txt || { echo "::error::bootstrap sem certificados TLS"; exit 1; }
           grep -qx 'share/doc/codex/LICENSE' bootstrap-files.txt || { echo "::error::bootstrap sem licença LICENSE do Codex"; exit 1; }
           grep -qx 'share/doc/codex/NOTICE' bootstrap-files.txt || { echo "::error::bootstrap sem licença NOTICE do Codex"; exit 1; }
