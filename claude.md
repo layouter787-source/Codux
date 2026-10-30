@@ -51,3 +51,15 @@ Existem três diretórios locais não rastreados, usados para inspeção: `.codu
 ## Critério de comunicação
 
 Distingue claramente entre código compilado, runtime incluído no artefacto e comportamento testado num dispositivo. Só declara sucesso quando a execução real correspondente estiver verde e o artefacto correto tiver sido inspecionado. No relatório final, lista arquivos alterados, testes/workflows reais, links dos artefactos e limitações de dispositivo ainda não verificadas.
+
+## Atualização após o PR de revisão (2026-10-30)
+
+Foi aberto o PR #1 (`fix/embedded-termux-runtime`, head `edafc4b`) com testes Android verdes. Os três commits de app foram revistos e aplicados a `main` como commits `feaf55e`, `52161e7` e `028e8a3`:
+
+- `targetSdk` passou a 28 para permitir executar os binários extraídos em `filesDir` segundo a restrição W^X documentada pelo Android. Isto é uma build de sideload; não é adequada para distribuição pelo Google Play, que exige targets recentes.
+- O ambiente integrado escolhe o nome atual/legado de `termux-exec`, passa variáveis Android/TLS necessárias e preserva `home` ao substituir o prefixo.
+- O terminal integrado recebeu redesenho de atualização da tela, teclado, clipboard, teclas ESC/TAB/Ctrl/setas, dimensão de texto em px e login shell.
+
+A proposta do PR para `.github/workflows/termux-bootstrap.yml` foi portada ao workflow ativo, mas **não foi feito merge do PR**. Ela adiciona espaço em disco e swap, reduz paralelismo e LTO, imprime diagnóstico em falha, guarda o ZIP para inspeção e corrige a extração da versão do CLI/SIGPIPE em `grep -q`. A validação foi reforçada para exigir executáveis, `termux-exec`, certificados TLS e `LICENSE`/`NOTICE` do Codex.
+
+O run `41003891727` foi cancelado após se decidir aplicar estas correções ao workflow; não o classificar como falha do novo workflow. O próximo passo é enviar estas alterações, despachar uma nova execução de bootstrap e aguardar a compilação real. O APK ainda deve ser recompilado com o bootstrap publicado e inspecionado antes de alegar que contém Codex.
