@@ -8,6 +8,8 @@ import java.io.FileOutputStream
 import java.util.zip.ZipInputStream
 import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Owns a Termux-prefix runtime inside Codux's private app data directory. */
@@ -23,75 +25,78 @@ class EmbeddedTermuxRuntime(context: Context) {
         return bash.isFile && File(prefix, "bin/codex").canExecute() && marker.isFile && marker.readText() == BOOTSTRAP_MARKER
     }
 
+    /** Seguro para chamadas concorrentes (terminal e ligação ao Codex): só uma instalação corre de cada vez. */
     suspend fun installIfNeeded() = withContext(Dispatchers.IO) {
-        if (isInstalled()) {
-            // Garante pastas que o runtime espera mesmo em instalações anteriores.
-            runCatching { prepareRuntimeDirectories(prefix) }
-            runCatching { home.mkdirs() }
-            return@withContext
-        }
-        val asset = bootstrapAsset() ?: error("O bootstrap Termux ainda não foi incluído para esta arquitetura Android.")
-        val staging = File(filesDir, "usr-staging")
-        deleteOwnedTree(staging)
-        check(staging.mkdirs() || staging.isDirectory) { "Não foi possível preparar o prefixo Termux." }
-        try {
-            val symlinks = mutableListOf<Pair<String, File>>()
-            app.assets.open(asset).use { raw ->
-                ZipInputStream(raw.buffered()).use { zip ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    while (true) {
-                        val entry = zip.nextEntry ?: break
-                        if (entry.name == "SYMLINKS.txt") {
-                            val reader = java.io.BufferedReader(java.io.InputStreamReader(zip, Charsets.UTF_8))
-                            while (true) {
-                                val line = reader.readLine() ?: break
-                                if (line.isBlank()) continue
-                                val separator = line.indexOf('←')
-                                require(separator > 0 && separator < line.lastIndex) { "SYMLINKS.txt contém uma entrada inválida." }
-                                val target = line.substring(0, separator)
-                                val relativeLink = line.substring(separator + 1).removePrefix("./")
-                                symlinks += target to safeChild(staging, relativeLink)
-                            }
-                            continue
-                        }
-                        val relativeEntry = entry.name.removePrefix("./").removeSuffix("/")
-                        if (relativeEntry.isEmpty() || relativeEntry == ".") continue
-                        val target = safeChild(staging, relativeEntry)
-                        if (entry.isDirectory) {
-                            check(target.mkdirs() || target.isDirectory) { "Não foi possível criar ${entry.name}." }
-                        } else {
-                            check(target.parentFile?.mkdirs() == true || target.parentFile?.isDirectory == true) { "Não foi possível criar a pasta de ${entry.name}." }
-                            FileOutputStream(target).use { out ->
+        installLock.withLock {
+            if (isInstalled()) {
+                // Garante pastas que o runtime espera mesmo em instalações anteriores.
+                runCatching { prepareRuntimeDirectories(prefix) }
+                runCatching { home.mkdirs() }
+                return@withContext
+            }
+            val asset = bootstrapAsset() ?: error("O bootstrap Termux ainda não foi incluído para esta arquitetura Android.")
+            val staging = File(filesDir, "usr-staging")
+            deleteOwnedTree(staging)
+            check(staging.mkdirs() || staging.isDirectory) { "Não foi possível preparar o prefixo Termux." }
+            try {
+                val symlinks = mutableListOf<Pair<String, File>>()
+                app.assets.open(asset).use { raw ->
+                    ZipInputStream(raw.buffered()).use { zip ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val entry = zip.nextEntry ?: break
+                            if (entry.name == "SYMLINKS.txt") {
+                                val reader = java.io.BufferedReader(java.io.InputStreamReader(zip, Charsets.UTF_8))
                                 while (true) {
-                                    val count = zip.read(buffer)
-                                    if (count < 0) break
-                                    out.write(buffer, 0, count)
+                                    val line = reader.readLine() ?: break
+                                    if (line.isBlank()) continue
+                                    val separator = line.indexOf('←')
+                                    require(separator > 0 && separator < line.lastIndex) { "SYMLINKS.txt contém uma entrada inválida." }
+                                    val target = line.substring(0, separator)
+                                    val relativeLink = line.substring(separator + 1).removePrefix("./")
+                                    symlinks += target to safeChild(staging, relativeLink)
                                 }
+                                continue
                             }
-                            if (entry.name.startsWith("bin/") || entry.name.startsWith("libexec/") ||
-                                entry.name.startsWith("lib/apt/apt-helper") || entry.name.startsWith("lib/apt/methods/")) {
-                                Os.chmod(target.absolutePath, 448) // 0700
+                            val relativeEntry = entry.name.removePrefix("./").removeSuffix("/")
+                            if (relativeEntry.isEmpty() || relativeEntry == ".") continue
+                            val target = safeChild(staging, relativeEntry)
+                            if (entry.isDirectory) {
+                                check(target.mkdirs() || target.isDirectory) { "Não foi possível criar ${entry.name}." }
+                            } else {
+                                check(target.parentFile?.mkdirs() == true || target.parentFile?.isDirectory == true) { "Não foi possível criar a pasta de ${entry.name}." }
+                                FileOutputStream(target).use { out ->
+                                    while (true) {
+                                        val count = zip.read(buffer)
+                                        if (count < 0) break
+                                        out.write(buffer, 0, count)
+                                    }
+                                }
+                                if (entry.name.startsWith("bin/") || entry.name.startsWith("libexec/") ||
+                                    entry.name.startsWith("lib/apt/apt-helper") || entry.name.startsWith("lib/apt/methods/")) {
+                                    Os.chmod(target.absolutePath, 448) // 0700
+                                }
                             }
                         }
                     }
                 }
+                check(symlinks.isNotEmpty()) { "O bootstrap não contém SYMLINKS.txt." }
+                symlinks.forEach { (target, link) ->
+                    check(link.parentFile?.isDirectory == true) { "A pasta do link Termux não existe." }
+                    Os.symlink(target, link.absolutePath)
+                }
+                prepareRuntimeDirectories(staging)
+                val bootstrapInfo = File(staging, "etc/termux-bootstrap.version")
+                check(bootstrapInfo.parentFile?.mkdirs() == true || bootstrapInfo.parentFile?.isDirectory == true)
+                bootstrapInfo.writeText(BOOTSTRAP_MARKER)
+                // Somente o prefixo é substituído: home (credenciais do Codex, ~/.codex) é preservada.
+                deleteOwnedTree(prefix)
+                check(staging.renameTo(prefix)) { "Não foi possível ativar o prefixo Termux." }
+                check(home.mkdirs() || home.isDirectory) { "Não foi possível criar o diretório pessoal do terminal." }
+            } catch (error: Throwable) {
+                deleteOwnedTree(staging)
+                throw error
             }
-            check(symlinks.isNotEmpty()) { "O bootstrap não contém SYMLINKS.txt." }
-            symlinks.forEach { (target, link) ->
-                check(link.parentFile?.isDirectory == true) { "A pasta do link Termux não existe." }
-                Os.symlink(target, link.absolutePath)
-            }
-            prepareRuntimeDirectories(staging)
-            val bootstrapInfo = File(staging, "etc/termux-bootstrap.version")
-            check(bootstrapInfo.parentFile?.mkdirs() == true || bootstrapInfo.parentFile?.isDirectory == true)
-            bootstrapInfo.writeText(BOOTSTRAP_MARKER)
-            // Somente o prefixo é substituído: home (credenciais do Codex, ~/.codex) é preservada.
-            deleteOwnedTree(prefix)
-            check(staging.renameTo(prefix)) { "Não foi possível ativar o prefixo Termux." }
-            check(home.mkdirs() || home.isDirectory) { "Não foi possível criar o diretório pessoal do terminal." }
-        } catch (error: Throwable) {
-            deleteOwnedTree(staging)
-            throw error
         }
     }
 
@@ -110,6 +115,10 @@ class EmbeddedTermuxRuntime(context: Context) {
             "TERMUX__HOME" to home.absolutePath,
             "TERMUX__PREFIX" to prefix.absolutePath,
             "TERMUX__ROOTFS" to filesDir.absolutePath,
+            // O app mira o API 28 e executa binários diretamente. Sem isto o termux-exec poderia
+            // reexecutar via /system/bin/linker, o que faz /proc/self/exe apontar para o linker e
+            // quebra o Codex (ele procura codex-code-mode-host ao lado do próprio executável).
+            "TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE" to "disable",
             "CODEX_HOME" to File(home, ".codex").absolutePath
         )
         preloadLibrary()?.let { env["LD_PRELOAD"] = it.absolutePath }
@@ -181,6 +190,7 @@ class EmbeddedTermuxRuntime(context: Context) {
 
     private companion object {
         const val BOOTSTRAP_MARKER = "Codux embedded Termux bootstrap v2\n"
+        val installLock = Mutex()
         val ANDROID_PASSTHROUGH = listOf(
             "ANDROID_ART_ROOT",
             "ANDROID_I18N_ROOT",
