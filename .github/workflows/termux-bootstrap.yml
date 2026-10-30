@@ -31,6 +31,7 @@ jobs:
           ! grep -q '$TERMUX_PACKAGES_DIRECTORY/"' scripts/build-bootstraps.sh
           test -s packages/codex/build.sh
           grep -q '^TERMUX_PKG_LICENSE="Apache-2.0, MIT"$' packages/codex/build.sh
+          export TERMUX_DOCKER_EXEC_EXTRA_ARGS="--env TERMUX_PKG_MAKE_PROCESSES=2"
           ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64 --add codex
       - name: Validate bootstrap archives and create checksums
         id: manifest
