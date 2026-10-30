@@ -624,6 +624,15 @@ class CoduxViewModel(application: Application) : AndroidViewModel(application) {
         _state.value = _state.value.copy(showTerminalConfirmation = false, terminalRunning = true, terminalOutput = "", terminalHandle = null, error = null)
         startSessionNotification("A executar comando confirmado no Termux")
         viewModelScope.launch {
+            val selectedWorkspace = _state.value
+            try {
+                selectedWorkspace.workspaceUri?.let { workspaceSync.fromSaf(it, selectedWorkspace.workspacePath) }
+            } catch (error: Exception) {
+                terminalDecoder.reset()
+                _state.value = _state.value.copy(terminalRunning = false, terminalHandle = null, terminalOutput = "Não foi possível sincronizar o projeto antes do comando: ${error.message}")
+                stopSessionNotificationIfIdle()
+                return@launch
+            }
             val handle = "codux-${UUID.randomUUID()}"
             terminalDecoder.reset()
             _state.value = _state.value.copy(terminalHandle = handle)

@@ -1,6 +1,7 @@
 package dev.codux.data
 
 import android.content.ContentResolver
+import android.database.Cursor
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -17,7 +18,6 @@ import kotlinx.coroutines.withContext
 /** Mirrors a Storage Access Framework folder into Codux's private POSIX runtime. */
 class ProjectWorkspaceSync(private val context: Context) {
     private val resolver: ContentResolver = context.contentResolver
-    private val files = ProjectFiles(context)
 
     fun localPath(treeUri: Uri): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -31,17 +31,19 @@ class ProjectWorkspaceSync(private val context: Context) {
         if (!root.exists() && !root.mkdirs()) throw IOException("Não foi possível criar a cópia local do projeto.")
         if (!root.isDirectory) throw IOException("O caminho local do projeto não é uma pasta.")
         copyFromSaf(treeUri, root, root.canonicalFile, 0)
+        pruneLocalTree(treeUri, root, root.canonicalFile, 0)
     }
 
     suspend fun toSaf(path: String, treeUri: Uri) = withContext(Dispatchers.IO) {
         val root = File(path).canonicalFile
         if (!root.isDirectory) throw IOException("A cópia local do projeto não está disponível.")
         copyToSaf(root, root, treeUri, 0)
+        pruneSafTree(root, root, treeUri, 0)
     }
 
     private suspend fun copyFromSaf(parentUri: Uri, localParent: File, root: File, depth: Int) {
         checkDepth(depth)
-        files.list(parentUri).forEach { item ->
+        listSaf(parentUri).forEach { item ->
             validateName(item.name)
             val local = File(localParent, item.name)
             ensureInside(local, root)
@@ -66,7 +68,7 @@ class ProjectWorkspaceSync(private val context: Context) {
     private suspend fun copyToSaf(root: File, localParent: File, safParent: Uri, depth: Int) {
         checkDepth(depth)
         val children = localParent.listFiles() ?: throw IOException("Não foi possível listar a cópia local do projeto.")
-        val remoteItems = files.list(safParent).associateBy { it.name }
+        val remoteItems = listSaf(safParent).associateBy { it.name }
         children.forEach { local ->
             if (local.name.startsWith(".") && local.name.endsWith(".tmp")) return@forEach
             validateName(local.name)
@@ -168,4 +170,65 @@ class ProjectWorkspaceSync(private val context: Context) {
     private fun checkDepth(depth: Int) {
         if (depth > 100) throw IOException("O projeto tem pastas demasiado profundas para sincronizar.")
     }
+
+    private suspend fun pruneLocalTree(parentUri: Uri, localParent: File, root: File, depth: Int) {
+        checkDepth(depth)
+        val remote = listSaf(parentUri)
+        val remoteNames = remote.mapTo(mutableSetOf()) { it.name }
+        val locals = localParent.listFiles() ?: throw IOException("Não foi possível listar a cópia local do projeto.")
+        locals.filter { it.name !in remoteNames && !isRecoveryFile(it.name) }.forEach { stale ->
+            ensureInside(stale, root)
+            if (Files.isSymbolicLink(stale.toPath())) Files.deleteIfExists(stale.toPath())
+            else if (!stale.deleteRecursively()) throw IOException("Não foi possível remover ${stale.name} da cópia local.")
+        }
+        remote.filter { it.isDirectory }.forEach { item ->
+            val local = File(localParent, item.name)
+            if (local.isDirectory) pruneLocalTree(item.uri, local, root, depth + 1)
+        }
+    }
+
+    private suspend fun pruneSafTree(root: File, localParent: File, safParent: Uri, depth: Int) {
+        checkDepth(depth)
+        val locals = localParent.listFiles() ?: throw IOException("Não foi possível listar a cópia local do projeto.")
+        val localNames = locals.filterNot { isRecoveryFile(it.name) }.mapTo(mutableSetOf()) { it.name }
+        val remote = listSaf(safParent)
+        remote.filter { it.name !in localNames && !isRecoveryFile(it.name) }.forEach { stale ->
+            if (!DocumentsContract.deleteDocument(resolver, stale.uri)) throw IOException("Não foi possível remover ${stale.name} da pasta escolhida.")
+        }
+        locals.filter { it.isDirectory && !isRecoveryFile(it.name) }.forEach { local ->
+            ensureInside(local, root)
+            val directory = remote.firstOrNull { it.name == local.name && it.isDirectory } ?: return@forEach
+            pruneSafTree(root, local, directory.uri, depth + 1)
+        }
+    }
+
+    private fun listSaf(parentUri: Uri): List<WorkspaceFile> {
+        val tree = asTreeUri(parentUri)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId(parentUri))
+        val projection = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE, Document.COLUMN_SIZE, Document.COLUMN_LAST_MODIFIED)
+        val result = mutableListOf<WorkspaceFile>()
+        resolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val id = cursor.value(Document.COLUMN_DOCUMENT_ID) ?: continue
+                val name = cursor.value(Document.COLUMN_DISPLAY_NAME) ?: "(sem nome)"
+                val mime = cursor.value(Document.COLUMN_MIME_TYPE).orEmpty()
+                val size = cursor.longValue(Document.COLUMN_SIZE)
+                val modified = cursor.longValue(Document.COLUMN_LAST_MODIFIED)?.takeIf { it > 0 }
+                result += WorkspaceFile(DocumentsContract.buildDocumentUriUsingTree(tree, id), name, mime == Document.MIME_TYPE_DIR, size, modified)
+            }
+        } ?: throw IOException("O fornecedor não permitiu listar esta pasta.")
+        return result
+    }
+
+    private fun Cursor.value(column: String): String? {
+        val index = getColumnIndex(column)
+        return if (index >= 0 && !isNull(index)) getString(index) else null
+    }
+
+    private fun Cursor.longValue(column: String): Long? {
+        val index = getColumnIndex(column)
+        return if (index >= 0 && !isNull(index)) getLong(index).takeIf { it >= 0 } else null
+    }
+
+    private fun isRecoveryFile(name: String): Boolean = name.startsWith(".") && name.contains(".codux-") && (name.endsWith(".tmp") || name.endsWith(".backup"))
 }
