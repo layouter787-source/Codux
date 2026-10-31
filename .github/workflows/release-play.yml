@@ -1,0 +1,97 @@
+name: Android Release (Play, API 35)
+
+"on":
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Versão (ex.: 0.1.0)"
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  play:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CODUX_PLAY: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.9"
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Install Android SDK packages
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
+
+      - name: Include embedded Termux bootstrap
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/assets
+          gh release download codux-termux-bootstrap-v1 --repo "$GH_REPO" --pattern bootstrap-aarch64.zip --pattern termux-bootstrap-manifest.txt --dir app/src/main/assets
+          cd app/src/main/assets
+          grep " bootstrap-aarch64.zip$" termux-bootstrap-manifest.txt | sha256sum --check --status
+          unzip -Z1 bootstrap-aarch64.zip > /tmp/bootstrap-files.txt
+          for entry in bin/bash bin/codex bin/codex-code-mode-host SYMLINKS.txt; do
+            grep -qx "$entry" /tmp/bootstrap-files.txt || { echo "::error::bootstrap sem $entry"; exit 1; }
+          done
+          grep -qx 'lib/libtermux-exec-linker-ld-preload.so' /tmp/bootstrap-files.txt || echo "::warning::bootstrap sem a variante linker do termux-exec"
+
+      - name: Prepare signing key and version
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.CODUX_KEYSTORE_PASSWORD }}
+          INPUT_VERSION: ${{ inputs.version_name }}
+        run: |
+          set -euo pipefail
+          test -f signing/codux.p12 || { echo "::error::signing/codux.p12 não existe. Rode antes o workflow Generate signing key."; exit 1; }
+          test -n "$KEYSTORE_PASSWORD" || { echo "::error::Secret CODUX_KEYSTORE_PASSWORD não definido."; exit 1; }
+          {
+            echo "CODUX_KEYSTORE_FILE=$GITHUB_WORKSPACE/signing/codux.p12"
+            echo "CODUX_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "CODUX_KEY_ALIAS=codux"
+            echo "CODUX_KEY_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "CODUX_VERSION_CODE=${{ github.run_number }}"
+            echo "CODUX_VERSION_NAME=${INPUT_VERSION}"
+          } >> "$GITHUB_ENV"
+
+      - name: Run unit tests
+        run: gradle testDebugUnitTest --stacktrace
+
+      - name: Build debug APK, release APK and AAB (API 35)
+        run: gradle assembleDebug assembleRelease bundleRelease --stacktrace
+
+      - name: Verify Play requirements
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
+          unzip -Z1 "$apk" > /tmp/apk-files.txt
+          grep -qx 'lib/arm64-v8a/libcodux-selfexe.so' /tmp/apk-files.txt || { echo "::error::APK sem libcodux-selfexe.so"; exit 1; }
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$apk" > /tmp/badging.txt
+          grep -q "targetSdkVersion:'35'" /tmp/badging.txt || { echo "::error::targetSdkVersion não é 35"; exit 1; }
+
+      - name: Collect files
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/codux-${CODUX_VERSION_NAME}-play-debug.apk"
+          cp app/build/outputs/apk/release/app-release.apk "dist/codux-${CODUX_VERSION_NAME}-play-release.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "dist/codux-${CODUX_VERSION_NAME}-play-release.aab"
+          ls -l dist
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: codux-play-files
+          path: dist/*
+          if-no-files-found: error
