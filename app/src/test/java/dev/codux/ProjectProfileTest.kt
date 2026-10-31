@@ -11,14 +11,13 @@ class ProjectProfileTest {
             listOf(
                 "build.gradle.kts",
                 "app/src/main/AndroidManifest.xml",
-                "app/src/main/java/com/draw/MainActivity.java",
+                "app/src/main/java/com/draw/DrawView.kt",
                 "app/src/main/cpp/Brush.cpp",
                 "app/src/main/cpp/CMakeLists.txt"
             )
         )
         assertEquals(listOf("Android"), profile.platforms)
-        assertTrue("Java" in profile.stacks)
-        assertTrue("C++" in profile.stacks)
+        assertEquals(listOf("Kotlin", "JNI", "NDK", "C++"), profile.stacks)
     }
 
     @Test
@@ -30,9 +29,9 @@ class ProjectProfileTest {
     }
 
     @Test
-    fun detectsDesktopProject() {
+    fun detectsPcProject() {
         val profile = ProjectProfile.detect(listOf("Cargo.toml", "src/main.rs"))
-        assertEquals(listOf("Desktop"), profile.platforms)
+        assertEquals(listOf("PC"), profile.platforms)
         assertEquals(listOf("Rust"), profile.stacks)
     }
 
