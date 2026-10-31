@@ -35,7 +35,8 @@ class TermuxBridge(context: Context) {
         check(tokenFile.setReadable(false, false) && tokenFile.setWritable(false, false))
         check(tokenFile.setReadable(true, true) && tokenFile.setWritable(true, true))
         val script = "exec codex app-server --listen '${connection.endpoint}' --ws-auth capability-token --ws-token-file '${tokenFile.absolutePath}'"
-        val process = ProcessBuilder(runtime.shellPath(), "-lc", script)
+        // bashCommand() já prefixa o linker do sistema quando o app mira o API 29+ (variante Play).
+        val process = ProcessBuilder(runtime.bashCommand("-lc", script))
             .directory(workdir)
             .redirectErrorStream(true)
             .apply { environment().putAll(runtime.environment(workdir).associate { it.substringBefore('=') to it.substringAfter('=') }) }
