@@ -11,12 +11,14 @@ name: Android Release (Play, API 35)
 permissions:
   contents: read
 
+env:
+  CODUX_PLAY: "1"
+  CODUX_BOOTSTRAP_RELEASE: codux-termux-bootstrap-v2
+
 jobs:
   play:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      CODUX_PLAY: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -32,21 +34,36 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
 
-      - name: Include embedded Termux bootstrap
+      - name: Include and validate embedded Termux bootstrap
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           mkdir -p app/src/main/assets
-          gh release download codux-termux-bootstrap-v1 --repo "$GH_REPO" --pattern bootstrap-aarch64.zip --pattern termux-bootstrap-manifest.txt --dir app/src/main/assets
+          gh release download "$CODUX_BOOTSTRAP_RELEASE" --repo "$GH_REPO" --pattern bootstrap-aarch64.zip --pattern termux-bootstrap-manifest.txt --dir app/src/main/assets
           cd app/src/main/assets
           grep " bootstrap-aarch64.zip$" termux-bootstrap-manifest.txt | sha256sum --check --status
           unzip -Z1 bootstrap-aarch64.zip > /tmp/bootstrap-files.txt
           for entry in bin/bash bin/codex bin/codex-code-mode-host SYMLINKS.txt; do
             grep -qx "$entry" /tmp/bootstrap-files.txt || { echo "::error::bootstrap sem $entry"; exit 1; }
           done
-          grep -qx 'lib/libtermux-exec-linker-ld-preload.so' /tmp/bootstrap-files.txt || echo "::warning::bootstrap sem a variante linker do termux-exec"
+          grep -qx 'lib/libtermux-exec-linker-ld-preload.so' /tmp/bootstrap-files.txt || { echo "::error::bootstrap sem a variante linker do termux-exec"; exit 1; }
+          mkdir -p /tmp/bootstrap-check
+          unzip -q bootstrap-aarch64.zip -d /tmp/bootstrap-check
+          if grep -RIl --exclude='*.so' '/data/data/com\.termux' /tmp/bootstrap-check >/tmp/legacy-paths.txt 2>/dev/null; then
+            echo '::error::bootstrap inválido: contém /data/data/com.termux'
+            cat /tmp/legacy-paths.txt
+            exit 1
+          fi
+          grep -RIl --exclude='*.so' '/data/data/dev\.codux' /tmp/bootstrap-check >/tmp/codux-paths.txt 2>/dev/null || {
+            echo '::error::bootstrap inválido: não contém /data/data/dev.codux'
+            exit 1
+          }
+          grep -q '^Codux package: dev\.codux$' termux-bootstrap-manifest.txt || {
+            echo '::error::manifest não confirma o package dev.codux'
+            exit 1
+          }
 
       - name: Prepare signing key and version
         env:
@@ -71,7 +88,7 @@ jobs:
       - name: Build debug APK, release APK and AAB (API 35)
         run: gradle assembleDebug assembleRelease bundleRelease --stacktrace
 
-      - name: Verify Play requirements
+      - name: Verify Play requirements and embedded bootstrap
         run: |
           set -euo pipefail
           apk=app/build/outputs/apk/release/app-release.apk
@@ -80,6 +97,18 @@ jobs:
           grep -qx 'lib/arm64-v8a/libcodux-selfexe.so' /tmp/apk-files.txt || { echo "::error::APK sem libcodux-selfexe.so"; exit 1; }
           "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$apk" > /tmp/badging.txt
           grep -q "targetSdkVersion:'35'" /tmp/badging.txt || { echo "::error::targetSdkVersion não é 35"; exit 1; }
+          unzip -p "$apk" assets/bootstrap-aarch64.zip > /tmp/apk-bootstrap.zip
+          mkdir -p /tmp/apk-bootstrap-check
+          unzip -q /tmp/apk-bootstrap.zip -d /tmp/apk-bootstrap-check
+          if grep -RIl --exclude='*.so' '/data/data/com\.termux' /tmp/apk-bootstrap-check >/tmp/apk-legacy-paths.txt 2>/dev/null; then
+            echo '::error::APK contém bootstrap legado com /data/data/com.termux'
+            cat /tmp/apk-legacy-paths.txt
+            exit 1
+          fi
+          grep -RIl --exclude='*.so' '/data/data/dev\.codux' /tmp/apk-bootstrap-check >/tmp/apk-codux-paths.txt 2>/dev/null || {
+            echo '::error::APK não contém bootstrap configurado para /data/data/dev.codux'
+            exit 1
+          }
 
       - name: Collect files
         run: |
