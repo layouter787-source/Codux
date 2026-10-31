@@ -42,8 +42,22 @@ class TermuxBridge(context: Context) {
             .apply { environment().putAll(runtime.environment(workdir).associate { it.substringBefore('=') to it.substringAfter('=') }) }
             .start()
         check(appServerProcess.compareAndSet(null, process)) { "O servidor Codex já está em execução." }
+        // O registo nunca contém o token (ele só existe no ficheiro acima).
+        AppServerLog.clear()
+        AppServerLog.append("$ codex app-server --listen ${connection.endpoint} --ws-auth capability-token")
         Thread({
-            process.inputStream.bufferedReader().useLines { lines -> lines.forEach { android.util.Log.i("CoduxAppServer", it) } }
+            try {
+                process.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { line ->
+                        android.util.Log.i("CoduxAppServer", line)
+                        AppServerLog.append(line)
+                    }
+                }
+            } catch (_: java.io.IOException) {
+                // Fluxo fechado ao parar o servidor.
+            }
+            val code = runCatching { process.waitFor() }.getOrDefault(-1)
+            AppServerLog.append("[o processo terminou com o código $code]")
             File(runtime.home, ".codux/app-server-token").delete()
             appServerProcess.compareAndSet(process, null)
         }, "CoduxAppServer-output").apply { isDaemon = true; start() }
