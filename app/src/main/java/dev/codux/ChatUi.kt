@@ -2,6 +2,7 @@ package dev.codux
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -24,6 +25,8 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +57,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.codux.data.AppState
 import dev.codux.data.ChatMessage
 import dev.codux.data.MessageRole
@@ -80,19 +84,10 @@ internal fun ChatScreen(
         if (state.messages.isNotEmpty() && target >= 0) messageListState.scrollToItem(target)
     }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            SidebarToggle(onMenu)
-            if (state.messages.isNotEmpty()) {
-                Text(state.activeThreadName, Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-            } else {
-                Spacer(Modifier.weight(1f))
-            }
-            ConnectionChip(state.connected, state.connecting, onConnect, onDisconnect)
-        }
+        CoduxHeader("Agente Codux", onMenu)
+        AgentCard(state.connected, state.connecting, onConnect, onDisconnect)
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (state.messages.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CoduxLogo() }
-            } else {
+            if (state.messages.isNotEmpty()) {
                 LazyColumn(state = messageListState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(26.dp)) {
                     items(state.messages, key = { it.id }) { message ->
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -113,10 +108,10 @@ internal fun ChatScreen(
         val hasInput = prompt.isNotBlank() || attachmentName != null
         Column(Modifier.widthIn(max = 800.dp).fillMaxWidth().align(Alignment.CenterHorizontally).padding(horizontal = 12.dp, vertical = 8.dp)) {
             Surface(
-                color = MaterialTheme.colorScheme.surface,
+                color = MaterialTheme.colorScheme.background,
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .75f))
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface)
             ) {
                 Column(Modifier.padding(horizontal = 6.dp, vertical = 4.dp)) {
                     if (attachmentName != null) {
@@ -132,13 +127,13 @@ internal fun ChatScreen(
                             value = prompt,
                             onValueChange = onPrompt,
                             modifier = Modifier.weight(1f).padding(vertical = 10.dp).heightIn(min = 24.dp, max = 150.dp),
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface, fontStyle = FontStyle.Italic),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
                             keyboardActions = KeyboardActions(onSend = { if (hasInput && state.connected && !state.isTurnRunning) onSend() }),
                             decorationBox = { inner ->
                                 Box(contentAlignment = Alignment.CenterStart) {
-                                    if (prompt.isBlank()) Text("Mensagem para o Codex", color = MaterialTheme.colorScheme.onSurface.copy(alpha = .45f))
+                                    if (prompt.isBlank()) Text("Programe com o codux_", fontStyle = FontStyle.Italic, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
                                     inner()
                                 }
                             }
@@ -168,16 +163,34 @@ internal fun ChatScreen(
     }
 }
 
+/**
+ * Cartão "Agente escolhido / Modelo" do desenho. O Codux só liga hoje ao Codex; o Claude Code aparece
+ * na lista como "em breve" para não fingir uma integração que ainda não existe.
+ */
 @Composable
-private fun ConnectionChip(connected: Boolean, connecting: Boolean, onConnect: () -> Unit, onDisconnect: () -> Unit) {
-    if (connected) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF38A87A)))
-            Text("Codex", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium)
-            IconButton(onClick = onDisconnect, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.Close, "Desligar", modifier = Modifier.size(16.dp)) }
+private fun AgentCard(connected: Boolean, connecting: Boolean, onConnect: () -> Unit, onDisconnect: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp)) {
+        Surface(
+            shape = RoundedCornerShape(30.dp),
+            color = MaterialTheme.colorScheme.background,
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp)).clickable { menuOpen = true }
+        ) {
+            Row(Modifier.padding(start = 22.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Agente escolhido: Codex", fontStyle = FontStyle.Italic, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Modelo: padrão do Codex", fontStyle = FontStyle.Italic, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+                }
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (connected) Color(0xFF38A87A) else MaterialTheme.colorScheme.outline))
+                if (connected) TextButton(onClick = onDisconnect) { Text("Desligar") }
+                else TextButton(onClick = onConnect, enabled = !connecting) { Text(if (connecting) "A ligar…" else "Ligar") }
+            }
         }
-    } else {
-        TextButton(onClick = onConnect, enabled = !connecting) { Text(if (connecting) "A ligar…" else "Ligar") }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(text = { Text("Codex (ativo)") }, onClick = { menuOpen = false })
+            DropdownMenuItem(text = { Text("Claude Code — em breve") }, onClick = { menuOpen = false }, enabled = false)
+        }
     }
 }
 
