@@ -1,18 +1,34 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
+
+// Variante Google Play: CODUX_PLAY=1 faz o app mirar o API 35 (exigência da loja).
+// O Android 10+ não deixa apps que miram o API 29+ executar arquivos de filesDir, então nessa
+// variante o runtime Termux roda tudo via /system/bin/linker64 (termux-exec system_linker_exec)
+// e uma pequena biblioteca nativa (libcodux-selfexe.so) corrige /proc/self/exe para o Codex.
+// Sem CODUX_PLAY o app continua mirando o API 28 e executa os binários diretamente.
+val playBuild = System.getenv("CODUX_PLAY") == "1"
+
 android { namespace = "dev.codux"; compileSdk = 35
-    // targetSdk 28 e intencional: a partir do API 29, apps que miram o API 29+ nao podem executar
-    // binarios gravados em filesDir (SELinux/W^X). O runtime Termux embutido (bash, codex) vive em
-    // filesDir/usr, entao e preciso mirar o API 28, como o proprio app Termux faz.
     defaultConfig {
-        applicationId = "dev.codux"; minSdk = 26; targetSdk = 28
+        applicationId = "dev.codux"; minSdk = 26
+        targetSdk = if (playBuild) 35 else 28
         // O CI define a versao; localmente cai nos valores padrao.
         versionCode = System.getenv("CODUX_VERSION_CODE")?.toIntOrNull() ?: 1
         versionName = System.getenv("CODUX_VERSION_NAME") ?: "0.1.0"
+        // O bootstrap Termux e so aarch64; a Play exige 64 bits.
+        if (playBuild) { ndk { abiFilters += "arm64-v8a" } }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     lint { disable += "ExpiredTargetSdkVersion" }
+
+    if (playBuild) {
+        ndkVersion = "29.0.14206865"
+        externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
+        // A biblioteca de LD_PRELOAD precisa existir como arquivo em nativeLibraryDir.
+        packaging { jniLibs { useLegacyPackaging = true } }
+        lint { abortOnError = false }
+    }
 
     // Assinatura de release: so existe quando o CI fornece o keystore por variaveis de ambiente.
     // Nada de senha ou keystore fica no repositorio.

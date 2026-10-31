@@ -79,11 +79,12 @@ private fun TerminalContent(
     val context = LocalContext.current
     val client = remember(context) { EmbeddedTerminalClient(context) }
     val session = remember(runtime, workingDirectory.absolutePath) {
-        // argv[0] precisa ser o nome do shell com '-' na frente para iniciar um login shell.
+        // -l inicia um login shell. Na variante Play o executável é o linker do sistema e o bash vai como argumento.
+        val command = runtime.bashCommand("-l")
         TerminalSession(
-            runtime.shellPath(),
+            command.first(),
             workingDirectory.absolutePath,
-            arrayOf("-" + File(runtime.shellPath()).name),
+            command.toTypedArray(),
             runtime.environment(workingDirectory),
             10_000,
             client

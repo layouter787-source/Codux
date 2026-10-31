@@ -20,6 +20,20 @@ class EmbeddedTermuxRuntime(context: Context) {
     val home: File get() = File(filesDir, "home")
     val bash: File get() = File(prefix, "bin/bash")
 
+    /**
+     * Apps que miram o API 29+ não podem executar arquivos de filesDir diretamente (Android 10+).
+     * Nesse caso tudo é executado via /system/bin/linker64 (termux-exec system_linker_exec).
+     * Com targetSdk 28 (versão normal do Codux) os binários são executados direto.
+     */
+    val usesSystemLinker: Boolean get() = app.applicationInfo.targetSdkVersion >= 29
+
+    private val systemLinker: String
+        get() = if (android.os.Process.is64Bit()) "/system/bin/linker64" else "/system/bin/linker"
+
+    /** Linha de comando (argv completo, argv[0] = executável) para rodar o bash do runtime. */
+    fun bashCommand(vararg args: String): List<String> =
+        (if (usesSystemLinker) listOf(systemLinker, bash.absolutePath) else listOf(bash.absolutePath)) + args
+
     fun isInstalled(): Boolean {
         val marker = File(prefix, "etc/termux-bootstrap.version")
         return bash.isFile && File(prefix, "bin/codex").canExecute() && marker.isFile && marker.readText() == BOOTSTRAP_MARKER
@@ -115,13 +129,15 @@ class EmbeddedTermuxRuntime(context: Context) {
             "TERMUX__HOME" to home.absolutePath,
             "TERMUX__PREFIX" to prefix.absolutePath,
             "TERMUX__ROOTFS" to filesDir.absolutePath,
-            // O app mira o API 28 e executa binários diretamente. Sem isto o termux-exec poderia
-            // reexecutar via /system/bin/linker, o que faz /proc/self/exe apontar para o linker e
-            // quebra o Codex (ele procura codex-code-mode-host ao lado do próprio executável).
-            "TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE" to "disable",
+            // Com targetSdk 28 os binários rodam direto; reexecutar via linker faria /proc/self/exe apontar
+            // para o linker e quebraria o Codex. Com targetSdk 29+ o linker é obrigatório (ver usesSystemLinker).
+            "TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE" to (if (usesSystemLinker) "force" else "disable"),
             "CODEX_HOME" to File(home, ".codex").absolutePath
         )
-        preloadLibrary()?.let { env["LD_PRELOAD"] = it.absolutePath }
+        val preload = mutableListOf<String>()
+        selfExeShim()?.let { preload += it.absolutePath }
+        preloadLibrary()?.let { preload += it.absolutePath }
+        if (preload.isNotEmpty()) env["LD_PRELOAD"] = preload.joinToString(":")
         val certificates = File(prefix, "etc/tls/cert.pem")
         if (certificates.isFile) env["SSL_CERT_FILE"] = certificates.absolutePath
         val certificateDirectory = File(prefix, "etc/tls/certs")
@@ -135,11 +151,27 @@ class EmbeddedTermuxRuntime(context: Context) {
 
     fun shellPath(): String = bash.absolutePath
 
-    /** Biblioteca LD_PRELOAD do termux-exec; o nome novo (2.x) tem prioridade sobre o link legado. */
-    private fun preloadLibrary(): File? =
-        listOf("lib/libtermux-exec-ld-preload.so", "lib/libtermux-exec.so")
-            .map { File(prefix, it) }
-            .firstOrNull { it.exists() }
+    /** Biblioteca de LD_PRELOAD do próprio app que corrige /proc/self/exe (só na variante Play). */
+    private fun selfExeShim(): File? =
+        File(app.applicationInfo.nativeLibraryDir, "libcodux-selfexe.so").takeIf { usesSystemLinker && it.isFile }
+
+    /**
+     * Biblioteca LD_PRELOAD do termux-exec. Na execução via linker usa a variante "linker";
+     * na execução direta, o nome novo (2.x) tem prioridade sobre o link legado.
+     */
+    private fun preloadLibrary(): File? {
+        val names = if (usesSystemLinker) {
+            listOf(
+                "lib/libtermux-exec-linker-ld-preload.so",
+                "lib/libtermux-exec-ld-preload.so",
+                "lib/libtermux-exec-direct-ld-preload.so",
+                "lib/libtermux-exec.so"
+            )
+        } else {
+            listOf("lib/libtermux-exec-ld-preload.so", "lib/libtermux-exec.so")
+        }
+        return names.map { File(prefix, it) }.firstOrNull { it.exists() }
+    }
 
     private fun prepareRuntimeDirectories(root: File) {
         val tmp = File(root, "tmp")
