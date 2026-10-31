@@ -25,14 +25,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Ícone de barra lateral dos esboços: retângulo com a parte esquerda preenchida. */
+/** Ícone de barra lateral dos desenhos: retângulo com a parte esquerda preenchida. */
 @Composable
 internal fun SidebarToggle(onClick: () -> Unit) {
     val color = MaterialTheme.colorScheme.onSurface
@@ -47,79 +47,70 @@ internal fun SidebarToggle(onClick: () -> Unit) {
                 style = Stroke(width = stroke)
             )
             drawRoundRect(
-                color = color.copy(alpha = .55f),
+                color = color,
                 topLeft = Offset(stroke * 2f, stroke * 2f),
-                size = Size(size.width * .28f, size.height - stroke * 4f),
-                cornerRadius = CornerRadius(2.dp.toPx())
+                size = Size(size.width * .16f, size.height - stroke * 4f),
+                cornerRadius = CornerRadius(1.dp.toPx())
             )
         }
     }
 }
 
-/** Pílula com o título, como nos esboços ("TERMINAL CODUX_"). */
+/** Pílula com o título em itálico, como nos desenhos ("PROJETOS CODUX_"). */
 @Composable
-internal fun TitlePill(text: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
-    val shape = RoundedCornerShape(14.dp)
-    val base = modifier.height(44.dp).clip(shape)
+internal fun TitlePill(text: String, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(22.dp)
     Surface(
         shape = shape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        modifier = if (onClick != null) base.clickable(onClick = onClick) else base
+        color = MaterialTheme.colorScheme.background,
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface),
+        modifier = modifier.height(46.dp)
     ) {
-        Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
-            Text(
-                text,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+            Text(text, fontStyle = FontStyle.Italic, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
+/** Pílula dividida do editor: "Editor Codux" à esquerda e o nome do projeto à direita. */
 @Composable
-internal fun CoduxHeader(title: String, onMenu: () -> Unit, trailing: @Composable RowScope.() -> Unit = {}) {
+internal fun SplitTitlePill(left: String, right: String, modifier: Modifier = Modifier, onRightClick: () -> Unit) {
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.background,
+        border = BorderStroke(2.dp, onSurface),
+        modifier = modifier.height(46.dp)
+    ) {
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.background,
+                border = BorderStroke(2.dp, onSurface),
+                modifier = Modifier.weight(1f).fillMaxHeight()
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(left, fontStyle = FontStyle.Italic, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onRightClick), contentAlignment = Alignment.Center) {
+                Text(right, fontStyle = FontStyle.Italic, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 8.dp))
+            }
+        }
+    }
+}
+
+/** Cabeçalho comum: botão da barra lateral e pílula de título. [cursor] acrescenta o "_" dos desenhos. */
+@Composable
+internal fun CoduxHeader(title: String, onMenu: () -> Unit, cursor: Boolean = true, trailing: @Composable RowScope.() -> Unit = {}) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         SidebarToggle(onMenu)
-        TitlePill(title.uppercase() + "_", Modifier.weight(1f))
+        TitlePill(title.uppercase() + if (cursor) "_" else "", Modifier.weight(1f))
         trailing()
-    }
-}
-
-/** Logótipo da tela inicial: "CODUX_" em contorno e "AGENTE" por baixo. */
-@Composable
-internal fun CoduxLogo(modifier: Modifier = Modifier) {
-    val color = MaterialTheme.colorScheme.onSurface
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                "CODUX",
-                style = TextStyle(
-                    color = color,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 46.sp,
-                    letterSpacing = 4.sp,
-                    drawStyle = Stroke(width = 3f)
-                )
-            )
-            Box(Modifier.padding(start = 6.dp, bottom = 9.dp).size(width = 20.dp, height = 6.dp).background(color))
-        }
-        Text(
-            "AGENTE",
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 6.sp,
-            fontSize = 16.sp,
-            color = color.copy(alpha = .8f),
-            modifier = Modifier.padding(top = 4.dp)
-        )
     }
 }
 
