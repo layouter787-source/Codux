@@ -99,6 +99,7 @@ class EmbeddedTermuxRuntime(context: Context) {
                     check(link.parentFile?.isDirectory == true) { "A pasta do link Termux não existe." }
                     Os.symlink(target, link.absolutePath)
                 }
+                rewriteHardcodedPackagePaths(staging)
                 prepareRuntimeDirectories(staging)
                 val bootstrapInfo = File(staging, "etc/termux-bootstrap.version")
                 check(bootstrapInfo.parentFile?.mkdirs() == true || bootstrapInfo.parentFile?.isDirectory == true)
@@ -173,6 +174,29 @@ class EmbeddedTermuxRuntime(context: Context) {
         return names.map { File(prefix, it) }.firstOrNull { it.exists() }
     }
 
+    /**
+     * Alguns scripts do bootstrap (por exemplo o que copia termux.properties no primeiro login) trazem
+     * /data/data/com.termux escrito à mão. Trocamos pelo pacote do Codux nos ficheiros de texto.
+     */
+    private fun rewriteHardcodedPackagePaths(root: File) {
+        val oldPath = "/data/data/com.termux"
+        val newPath = "/data/data/" + app.packageName
+        if (oldPath == newPath) return
+        listOf("etc", "bin", "libexec", "share/examples").forEach { relative ->
+            val base = File(root, relative)
+            if (!base.isDirectory) return@forEach
+            base.walkTopDown()
+                .onEnter { !Files.isSymbolicLink(it.toPath()) }
+                .filter { it.isFile && !Files.isSymbolicLink(it.toPath()) && it.length() in 1..1_000_000 }
+                .forEach { file ->
+                    val bytes = file.readBytes()
+                    if (bytes.contains(0.toByte())) return@forEach // binário (ELF, etc.)
+                    val text = String(bytes, Charsets.UTF_8)
+                    if (text.contains(oldPath)) file.writeText(text.replace(oldPath, newPath))
+                }
+        }
+    }
+
     private fun prepareRuntimeDirectories(root: File) {
         val tmp = File(root, "tmp")
         check(tmp.mkdirs() || tmp.isDirectory) { "Não foi possível criar a pasta temporária do runtime." }
@@ -221,7 +245,8 @@ class EmbeddedTermuxRuntime(context: Context) {
     }
 
     private companion object {
-        const val BOOTSTRAP_MARKER = "Codux embedded Termux bootstrap v2\n"
+        // v3: reinstala o prefixo para aplicar rewriteHardcodedPackagePaths em instalações anteriores.
+        const val BOOTSTRAP_MARKER = "Codux embedded Termux bootstrap v3\n"
         val installLock = Mutex()
         val ANDROID_PASSTHROUGH = listOf(
             "ANDROID_ART_ROOT",
