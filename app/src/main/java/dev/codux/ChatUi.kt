@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -198,7 +197,9 @@ private fun AgentCard(connected: Boolean, connecting: Boolean, onConnect: () -> 
 internal fun MessageRow(message: ChatMessage) {
     when (message.role) {
         MessageRole.USER -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(20.dp), modifier = Modifier.widthIn(max = 540.dp)) { Text(message.text, Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) }
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp), modifier = Modifier.widthIn(max = 540.dp)) {
+                Text(message.text, Modifier.padding(horizontal = 16.dp, vertical = 12.dp), color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
         }
         MessageRole.ASSISTANT -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
             Box(Modifier.padding(top = 5.dp).size(26.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) { Text("C", style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.Bold) }
@@ -257,27 +258,33 @@ private fun inlineMarkdown(text: String): AnnotatedString {
     }
 }
 
+/** Bloco de código com realce de sintaxe no estilo VS Code, cabeçalho com a linguagem e botão de copiar. */
 @Composable
 private fun CodeBlock(code: String, language: String) {
     val clipboard = LocalClipboardManager.current
     var expanded by remember(code) { mutableStateOf(false) }
+    val dark = isDarkSurface()
+    val palette = if (dark) DarkSyntaxPalette else LightSyntaxPalette
+    val highlighted = remember(code, language, dark) { CodeSyntax.highlight(code, CodeSyntax.forLanguageName(language), palette) }
+    val surfaceColor = if (dark) Color(0xFF1E1E1E) else Color(0xFFF5F6F8)
+    val muted = palette.plain.copy(alpha = .62f)
     Surface(
         shape = RoundedCornerShape(15.dp),
-        color = if (isSystemInDarkTheme()) Color(0xFF111722) else Color(0xFFF0F3F8),
+        color = surfaceColor,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .35f))
     ) {
         Column(Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(language.ifBlank { "Código" }, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f))
+                Text(language.ifBlank { "Código" }, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = muted)
                 TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Recolher" else "Expandir") }
-                IconButton(onClick = { clipboard.setText(AnnotatedString(code)) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.ContentCopy, "Copiar código", modifier = Modifier.size(16.dp)) }
+                IconButton(onClick = { clipboard.setText(AnnotatedString(code)) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.ContentCopy, "Copiar código", tint = muted, modifier = Modifier.size(16.dp)) }
             }
             Text(
-                code,
+                highlighted,
                 Modifier.fillMaxWidth().heightIn(max = if (expanded) 620.dp else 220.dp).verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface
+                color = palette.plain
             )
         }
     }
