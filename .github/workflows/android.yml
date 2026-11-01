@@ -2,7 +2,7 @@ name: Android builds
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
     paths:
       - '.github/workflows/android.yml'
       - 'README.md'
@@ -84,7 +84,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
         with:
-          name: codux-debug-apk
+          name: codux-debug-apk-${{ github.run_number }}-${{ github.run_attempt }}
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -92,7 +92,7 @@ jobs:
   signed-release:
     name: Build signed release APK and AAB
     runs-on: ubuntu-latest
-    # Never expose release credentials to pull-request builds.
+    # Pushes to every branch and manual runs can sign. Pull-request events cannot access signing secrets.
     if: github.event_name != 'pull_request'
     steps:
       - name: Check whether release signing is configured
@@ -189,7 +189,7 @@ jobs:
         if: steps.signing.outputs.configured == 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: codux-signed-release-${{ github.run_number }}
+          name: codux-signed-release-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/bundle/release/app-release.aab
