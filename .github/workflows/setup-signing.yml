@@ -1,0 +1,185 @@
+name: Initialize Android release signing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codux-release-signing-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  initialize:
+    name: Generate permanent signing key and store GitHub secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate bootstrap credentials
+        env:
+          BOOTSTRAP_TOKEN: ${{ secrets.CODUX_BOOTSTRAP_TOKEN }}
+          BACKUP_PASSWORD: ${{ secrets.CODUX_BACKUP_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$BOOTSTRAP_TOKEN" || { echo "::error::Create the CODUX_BOOTSTRAP_TOKEN Actions secret first."; exit 1; }
+          test -n "$BACKUP_PASSWORD" || { echo "::error::Create CODUX_BACKUP_PASSWORD as an Actions secret first."; exit 1; }
+          if [[ ${#BACKUP_PASSWORD} -lt 20 ]]; then
+            echo "::error::CODUX_BACKUP_PASSWORD must contain at least 20 characters."
+            exit 1
+          fi
+
+      - name: Install Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install PyNaCl
+        run: python -m pip install --disable-pip-version-check pynacl requests
+
+      - name: Generate keystore and write repository secrets
+        env:
+          GH_TOKEN: ${{ secrets.CODUX_BOOTSTRAP_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          CODUX_BACKUP_PASSWORD: ${{ secrets.CODUX_BACKUP_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          KEYSTORE="$RUNNER_TEMP/codux-upload.jks"
+          WORK="$RUNNER_TEMP/codux-signing-backup"
+          mkdir -p "$WORK"
+
+          python - <<'PY'
+          import base64, json, os, secrets, subprocess, sys
+          from pathlib import Path
+          import requests
+          from nacl.public import PublicKey, SealedBox
+
+          token = os.environ["GH_TOKEN"]
+          repo = os.environ["GH_REPOSITORY"]
+          api = "https://api.github.com"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+          session = requests.Session()
+          session.headers.update(headers)
+
+          def check(response):
+              if not response.ok:
+                  raise RuntimeError(f"GitHub API returned HTTP {response.status_code}: {response.text[:500]}")
+              return response
+
+          # Refuse to overwrite an existing release identity. Key rotation would
+          # break in-place updates for apps signed with the previous key.
+          existing = check(session.get(f"{api}/repos/{repo}/actions/secrets", params={"per_page": 100})).json()
+          names = {item["name"] for item in existing.get("secrets", [])}
+          signing_names = {
+              "CODUX_KEYSTORE_BASE64",
+              "CODUX_KEYSTORE_PASSWORD",
+              "CODUX_KEY_ALIAS",
+              "CODUX_KEY_PASSWORD",
+          }
+          if names.intersection(signing_names):
+              raise SystemExit("Signing secrets already exist. Refusing to generate or overwrite the permanent signing key.")
+
+          store_password = secrets.token_urlsafe(32)
+          key_password = secrets.token_urlsafe(32)
+          alias = "codux-upload"
+          keystore = Path(os.environ["RUNNER_TEMP"]) / "codux-upload.jks"
+
+          env = os.environ.copy()
+          env["CODUX_STORE_PASSWORD"] = store_password
+          env["CODUX_KEY_PASSWORD"] = key_password
+          subprocess.run([
+              "keytool", "-genkeypair", "-v",
+              "-keystore", str(keystore),
+              "-alias", alias,
+              "-keyalg", "RSA",
+              "-keysize", "4096",
+              "-validity", "10000",
+              "-dname", "CN=Codux Android Release, O=Codux, L=Luanda, ST=Luanda, C=AO",
+              "-storepass:env", "CODUX_STORE_PASSWORD",
+              "-keypass:env", "CODUX_KEY_PASSWORD",
+              "-noprompt",
+          ], check=True, env=env, stdout=subprocess.DEVNULL)
+
+          public_key = check(session.get(f"{api}/repos/{repo}/actions/secrets/public-key")).json()
+          pub = PublicKey(base64.b64decode(public_key["key"]))
+          box = SealedBox(pub)
+
+          values = {
+              "CODUX_KEYSTORE_BASE64": base64.b64encode(keystore.read_bytes()).decode("ascii"),
+              "CODUX_KEYSTORE_PASSWORD": store_password,
+              "CODUX_KEY_ALIAS": alias,
+              "CODUX_KEY_PASSWORD": key_password,
+          }
+
+          for name, value in values.items():
+              encrypted = base64.b64encode(box.encrypt(value.encode("utf-8"))).decode("ascii")
+              response = session.put(
+                  f"{api}/repos/{repo}/actions/secrets/{name}",
+                  json={"encrypted_value": encrypted, "key_id": public_key["key_id"]},
+              )
+              check(response)
+
+          # Keep the recovery material only in the encrypted archive created by
+          # the next step. Never print credentials or upload a plaintext keystore.
+          backup = Path(os.environ["RUNNER_TEMP"]) / "codux-signing-backup"
+          backup.mkdir(mode=0o700, exist_ok=True)
+          (backup / "codux-upload.jks").write_bytes(keystore.read_bytes())
+          (backup / "signing-credentials.txt").write_text(
+              "Codux Android release signing\n"
+              f"Keystore file: codux-upload.jks\n"
+              f"Alias: {alias}\n"
+              f"Keystore password: {store_password}\n"
+              f"Key password: {key_password}\n",
+              encoding="utf-8",
+          )
+          os.chmod(backup / "codux-upload.jks", 0o600)
+          os.chmod(backup / "signing-credentials.txt", 0o600)
+          print("Release signing secrets were created. Credential values were not printed.")
+          PY
+
+      - name: Encrypt recovery backup
+        env:
+          CODUX_BACKUP_PASSWORD: ${{ secrets.CODUX_BACKUP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/codux-signing-backup.tar.gz" codux-signing-backup
+          openssl enc -aes-256-cbc -pbkdf2 -salt -iter 600000 \
+            -in "$RUNNER_TEMP/codux-signing-backup.tar.gz" \
+            -out "$RUNNER_TEMP/codux-signing-backup.tar.gz.enc" \
+            -pass env:CODUX_BACKUP_PASSWORD
+          test -s "$RUNNER_TEMP/codux-signing-backup.tar.gz.enc"
+          rm -f "$RUNNER_TEMP/codux-signing-backup.tar.gz"
+
+      - name: Upload encrypted recovery backup
+        uses: actions/upload-artifact@v6
+        with:
+          name: codux-signing-backup-encrypted
+          path: ${{ runner.temp }}/codux-signing-backup.tar.gz.enc
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Revoke bootstrap token from repository secrets
+        env:
+          GH_TOKEN: ${{ secrets.CODUX_BOOTSTRAP_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            -X DELETE \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GH_REPOSITORY/actions/secrets/CODUX_BOOTSTRAP_TOKEN"
+          echo "Temporary repository secret CODUX_BOOTSTRAP_TOKEN has been deleted."
