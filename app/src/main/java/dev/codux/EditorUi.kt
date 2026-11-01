@@ -3,6 +3,7 @@ package dev.codux
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -12,16 +13,25 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -36,11 +46,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,20 +59,41 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.codux.data.AppState
@@ -74,20 +106,93 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
-/** Um ficheiro aberto no editor, com o texto em edição. */
+private fun TextFieldValue.toState() = EditState(text, selection.start, selection.end)
+private fun EditState.toValue() = TextFieldValue(text, TextRange(start, end))
+
+/** Um ficheiro aberto no editor, com o texto em edição e o histórico de desfazer. */
 @Stable
 internal class EditorTab(initial: OpenDocument) {
     var document by mutableStateOf(initial)
     var value by mutableStateOf(TextFieldValue(initial.editedText))
+    var undoDepth by mutableIntStateOf(0)
+    var redoDepth by mutableIntStateOf(0)
+    private val undoStack = ArrayList<TextFieldValue>()
+    private val redoStack = ArrayList<TextFieldValue>()
+    private var lastEditAt = 0L
+
+    val language: CodeLanguage get() = CodeSyntax.languageFor(document.name)
     val dirty: Boolean get() = value.text != document.originalText
+
+    /** Edição vinda do teclado: aplica indentação automática e fecho de pares. */
+    fun typed(new: TextFieldValue) {
+        if (new.text == value.text) {
+            value = new
+            return
+        }
+        val adjusted = CodeEditing.afterTyping(value.toState(), new.toState(), language == CodeLanguage.PYTHON)
+        // Só substitui o valor do teclado quando uma regra mexeu no texto (preserva a composição do IME).
+        commit(if (adjusted == new.toState()) new else adjusted.toValue(), coalesce = true)
+    }
+
+    /** Edição pedida pela barra de comandos. */
+    fun apply(state: EditState) = commit(state.toValue(), coalesce = false)
+
+    fun select(range: TextRange) {
+        value = value.copy(selection = range)
+    }
+
+    private fun commit(next: TextFieldValue, coalesce: Boolean) {
+        if (next.text != value.text) {
+            val now = System.currentTimeMillis()
+            if (!coalesce || undoStack.isEmpty() || now - lastEditAt > 600) {
+                undoStack.add(value)
+                if (undoStack.size > 300) undoStack.removeAt(0)
+            }
+            lastEditAt = now
+            redoStack.clear()
+        }
+        value = next
+        undoDepth = undoStack.size
+        redoDepth = redoStack.size
+    }
+
+    fun undo() {
+        if (undoStack.isEmpty()) return
+        redoStack.add(value)
+        value = undoStack.removeAt(undoStack.lastIndex)
+        undoDepth = undoStack.size
+        redoDepth = redoStack.size
+    }
+
+    fun redo() {
+        if (redoStack.isEmpty()) return
+        undoStack.add(value)
+        value = redoStack.removeAt(redoStack.lastIndex)
+        undoDepth = undoStack.size
+        redoDepth = redoStack.size
+    }
 }
 
-/** Separadores abertos; vive em CoduxApp para sobreviver à navegação entre ecrãs. */
+/** Separadores abertos e estado da procura; vive em CoduxApp para sobreviver à navegação entre ecrãs. */
 @Stable
 internal class EditorSession {
     val tabs = mutableStateListOf<EditorTab>()
     var activeIndex by mutableIntStateOf(0)
     val active: EditorTab? get() = tabs.getOrNull(activeIndex)
+    var fontSize by mutableIntStateOf(13)
+    var findOpen by mutableStateOf(false)
+    var replaceOpen by mutableStateOf(false)
+    var query by mutableStateOf("")
+    var replacement by mutableStateOf("")
+    var caseSensitive by mutableStateOf(false)
+    var matchIndex by mutableIntStateOf(0)
+    var revealOffset by mutableIntStateOf(-1)
+    var revealTick by mutableIntStateOf(0)
+
+    fun reveal(offset: Int) {
+        revealOffset = offset
+        revealTick++
+    }
 
     fun open(document: OpenDocument) {
         val existing = tabs.indexOfFirst { it.document.uri == document.uri }
@@ -104,6 +209,74 @@ internal class EditorSession {
         if (index < 0) return
         tabs.removeAt(index)
         activeIndex = activeIndex.coerceIn(0, (tabs.size - 1).coerceAtLeast(0))
+    }
+}
+
+/** Cores do VS Code (Dark+ e Light+). */
+private class EditorPalette(val dark: Boolean) {
+    val background = if (dark) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
+    val foreground = if (dark) Color(0xFFD4D4D4) else Color(0xFF000000)
+    val gutter = if (dark) Color(0xFF858585) else Color(0xFF237893)
+    val gutterActive = if (dark) Color(0xFFC6C6C6) else Color(0xFF0B216F)
+    val currentLine = if (dark) Color(0xFF2A2D2E) else Color(0xFFF0F0F0)
+    val selection = if (dark) Color(0xFF264F78) else Color(0xFFADD6FF)
+    val findMatch = if (dark) Color(0xFF515C6A) else Color(0xFFFFE0A0)
+    val findCurrent = if (dark) Color(0xFF7A6F2E) else Color(0xFFFFB84D)
+    val statusBar = Color(0xFF007ACC)
+    val panel = if (dark) Color(0xFF252526) else Color(0xFFF3F3F3)
+    val border = if (dark) Color(0xFF3C3C3C) else Color(0xFFCCCCCC)
+
+    fun token(type: TokenType): Color = if (dark) {
+        when (type) {
+            TokenType.KEYWORD -> Color(0xFF569CD6)
+            TokenType.CONTROL -> Color(0xFFC586C0)
+            TokenType.STRING -> Color(0xFFCE9178)
+            TokenType.COMMENT -> Color(0xFF6A9955)
+            TokenType.NUMBER -> Color(0xFFB5CEA8)
+            TokenType.TYPE -> Color(0xFF4EC9B0)
+            TokenType.FUNCTION -> Color(0xFFDCDCAA)
+            TokenType.ANNOTATION -> Color(0xFF4EC9B0)
+            TokenType.TAG -> Color(0xFF569CD6)
+            TokenType.ATTRIBUTE -> Color(0xFF9CDCFE)
+            TokenType.PROPERTY -> Color(0xFF9CDCFE)
+        }
+    } else {
+        when (type) {
+            TokenType.KEYWORD -> Color(0xFF0000FF)
+            TokenType.CONTROL -> Color(0xFFAF00DB)
+            TokenType.STRING -> Color(0xFFA31515)
+            TokenType.COMMENT -> Color(0xFF008000)
+            TokenType.NUMBER -> Color(0xFF098658)
+            TokenType.TYPE -> Color(0xFF267F99)
+            TokenType.FUNCTION -> Color(0xFF795E26)
+            TokenType.ANNOTATION -> Color(0xFF267F99)
+            TokenType.TAG -> Color(0xFF800000)
+            TokenType.ATTRIBUTE -> Color(0xFFE50000)
+            TokenType.PROPERTY -> Color(0xFF001080)
+        }
+    }
+}
+
+private class SyntaxTransformation(
+    private val language: CodeLanguage,
+    private val palette: EditorPalette,
+    private val matches: List<IntRange>,
+    private val currentMatch: Int
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val raw = text.text
+        val builder = AnnotatedString.Builder(raw)
+        CodeSyntax.tokenize(raw, language).forEach { token ->
+            val style = if (token.type == TokenType.COMMENT) SpanStyle(color = palette.token(token.type), fontStyle = FontStyle.Italic)
+            else SpanStyle(color = palette.token(token.type))
+            builder.addStyle(style, token.start, token.end)
+        }
+        matches.forEachIndexed { index, range ->
+            if (range.first >= 0 && range.last + 1 <= raw.length) {
+                builder.addStyle(SpanStyle(background = if (index == currentMatch) palette.findCurrent else palette.findMatch), range.first, range.last + 1)
+            }
+        }
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
 }
 
@@ -129,12 +302,16 @@ internal fun EditorScreen(
     val projectFiles = remember(context) { ProjectFiles(context.applicationContext) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val palette = remember(dark) { EditorPalette(dark) }
     var showExplorer by remember { mutableStateOf(false) }
     var closeCandidate by remember { mutableStateOf<EditorTab?>(null) }
     var diffText by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
     var newMenu by remember { mutableStateOf(false) }
+    var gotoOpen by remember { mutableStateOf(false) }
+    var gotoText by remember { mutableStateOf("") }
     var createKind by remember { mutableStateOf<Boolean?>(null) }
     var createName by remember { mutableStateOf("") }
     var renameFile by remember { mutableStateOf<WorkspaceFile?>(null) }
@@ -142,10 +319,16 @@ internal fun EditorScreen(
     var deleteFile by remember { mutableStateOf<WorkspaceFile?>(null) }
     var moveFile by remember { mutableStateOf<WorkspaceFile?>(null) }
     val project = state.projects.firstOrNull { it.uri == state.workspaceUri }
+    val active = session.active
 
     LaunchedEffect(state.workspaceUri) {
         if (session.tabs.isEmpty() && state.workspaceUri != null) showExplorer = true
     }
+
+    val matches = remember(active?.value?.text, session.query, session.caseSensitive, session.findOpen) {
+        if (session.findOpen && active != null) CodeEditing.findAll(active.value.text, session.query, session.caseSensitive) else emptyList()
+    }
+    val currentMatch = if (matches.isEmpty()) -1 else session.matchIndex.coerceIn(0, matches.lastIndex)
 
     fun openFile(file: WorkspaceFile) {
         if (file.isDirectory) {
@@ -171,6 +354,49 @@ internal fun EditorScreen(
         }
     }
 
+    fun goToMatch(index: Int) {
+        val tab = session.active ?: return
+        if (matches.isEmpty()) return
+        val wrapped = ((index % matches.size) + matches.size) % matches.size
+        session.matchIndex = wrapped
+        val match = matches[wrapped]
+        tab.select(TextRange(match.first, match.last + 1))
+        session.reveal(match.first)
+    }
+
+    fun replaceCurrent() {
+        val tab = session.active ?: return
+        if (currentMatch < 0) return
+        val match = matches[currentMatch]
+        val text = tab.value.text
+        val newText = text.replaceRange(match.first, match.last + 1, session.replacement)
+        val cursor = match.first + session.replacement.length
+        tab.apply(EditState(newText, cursor, cursor))
+    }
+
+    fun replaceEverything() {
+        val tab = session.active ?: return
+        if (session.query.isEmpty()) return
+        val newText = CodeEditing.replaceAll(tab.value.text, session.query, session.replacement, session.caseSensitive)
+        tab.apply(EditState(newText, 0, 0))
+    }
+
+    fun runShortcut(command: String): Boolean {
+        val tab = session.active ?: return false
+        return when (command) {
+            "save" -> { save(tab); true }
+            "find" -> { session.findOpen = true; true }
+            "goto" -> { gotoText = ""; gotoOpen = true; true }
+            "undo" -> { tab.undo(); true }
+            "redo" -> { tab.redo(); true }
+            "comment" -> { tab.apply(CodeEditing.toggleComment(tab.value.toState(), CodeSyntax.commentPrefix(tab.language))); true }
+            "duplicate" -> { tab.apply(CodeEditing.duplicateLines(tab.value.toState())); true }
+            "indent" -> { tab.apply(CodeEditing.indent(tab.value.toState(), outdent = false)); true }
+            "outdent" -> { tab.apply(CodeEditing.indent(tab.value.toState(), outdent = true)); true }
+            else -> false
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -185,7 +411,6 @@ internal fun EditorScreen(
                 EmptyStateCard("Nenhum projeto aberto", "Escolhe um projeto para editar os ficheiros.", "Ver projetos", onGoProjects)
             }
         } else {
-            val active = session.active
             Surface(color = MaterialTheme.colorScheme.background, border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(horizontal = 6.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -203,10 +428,14 @@ internal fun EditorScreen(
                     Box {
                         IconButton(onClick = { moreMenu = true }, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.MoreVert, "Mais") }
                         DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                            DropdownMenuItem(text = { Text("Procurar e substituir") }, enabled = active != null, onClick = { moreMenu = false; session.findOpen = true })
+                            DropdownMenuItem(text = { Text("Ir para a linha…") }, enabled = active != null, onClick = { moreMenu = false; gotoText = ""; gotoOpen = true })
                             DropdownMenuItem(text = { Text("Ver alterações") }, enabled = active != null, onClick = {
                                 moreMenu = false
                                 active?.let { diffText = UnifiedDiff.create(it.document.originalText, it.value.text) }
                             })
+                            DropdownMenuItem(text = { Text("Aumentar letra") }, onClick = { session.fontSize = (session.fontSize + 1).coerceAtMost(24) })
+                            DropdownMenuItem(text = { Text("Diminuir letra") }, onClick = { session.fontSize = (session.fontSize - 1).coerceAtLeast(9) })
                             DropdownMenuItem(text = { Text("Fechar ficheiro") }, enabled = active != null, onClick = {
                                 moreMenu = false
                                 active?.let { if (it.dirty) closeCandidate = it else session.close(it) }
@@ -222,13 +451,52 @@ internal fun EditorScreen(
                     Button(onClick = { showExplorer = true }) { Text("Abrir ficheiros") }
                 }
             } else {
-                CodeEditor(active, !saving, Modifier.weight(1f).fillMaxWidth())
-                SymbolBar(active) {
-                    val value = active.value
-                    val selection = value.selection
-                    val text = if (!selection.collapsed) value.text.substring(selection.min, selection.max) else value.text
-                    clipboard.setText(AnnotatedString(text))
+                if (session.findOpen) {
+                    FindPanel(
+                        session = session,
+                        palette = palette,
+                        matchCount = matches.size,
+                        currentMatch = currentMatch,
+                        onNext = { goToMatch(currentMatch + 1) },
+                        onPrevious = { goToMatch(currentMatch - 1) },
+                        onQueryChanged = {
+                            val found = CodeEditing.findAll(active.value.text, session.query, session.caseSensitive)
+                            if (found.isNotEmpty()) {
+                                val cursor = active.value.selection.start
+                                val first = found.indexOfFirst { it.first >= cursor }.let { if (it < 0) 0 else it }
+                                session.matchIndex = first
+                                active.select(TextRange(found[first].first, found[first].last + 1))
+                                session.reveal(found[first].first)
+                            }
+                        },
+                        onReplace = { replaceCurrent() },
+                        onReplaceAll = { replaceEverything() },
+                        onClose = { session.findOpen = false }
+                    )
                 }
+                CodeEditor(
+                    tab = active,
+                    palette = palette,
+                    fontSize = session.fontSize,
+                    matches = matches,
+                    currentMatch = currentMatch,
+                    enabled = !saving,
+                    revealOffset = session.revealOffset,
+                    revealTick = session.revealTick,
+                    onShortcut = { runShortcut(it) },
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
+                StatusBar(active, palette)
+                CommandBars(
+                    tab = active,
+                    palette = palette,
+                    onCommand = { runShortcut(it) },
+                    onCopy = {
+                        val value = active.value
+                        val selection = value.selection
+                        clipboard.setText(AnnotatedString(if (!selection.collapsed) value.text.substring(selection.min, selection.max) else value.text))
+                    }
+                )
             }
         }
     }
@@ -268,6 +536,26 @@ internal fun EditorScreen(
         }
     }
 
+    if (gotoOpen) {
+        AlertDialog(
+            onDismissRequest = { gotoOpen = false },
+            title = { Text("Ir para a linha") },
+            text = { OutlinedTextField(value = gotoText, onValueChange = { gotoText = it.filter(Char::isDigit) }, singleLine = true, label = { Text("Número da linha") }) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val tab = session.active
+                    val line = gotoText.toIntOrNull()
+                    if (tab != null && line != null && line > 0) {
+                        val offset = CodeEditing.offsetOfLine(tab.value.text, line)
+                        tab.select(TextRange(offset))
+                        session.reveal(offset)
+                    }
+                    gotoOpen = false
+                }) { Text("Ir") }
+            },
+            dismissButton = { TextButton(onClick = { gotoOpen = false }) { Text("Cancelar") } }
+        )
+    }
     closeCandidate?.let { tab ->
         AlertDialog(
             onDismissRequest = { closeCandidate = null },
@@ -345,6 +633,10 @@ private fun languageBadge(name: String): Pair<String, Color> = when (name.substr
     "html" -> "HTML" to Color(0xFFE34F26)
     "css" -> "CSS" to Color(0xFF1572B6)
     "md" -> "MD" to Color(0xFF555555)
+    "swift" -> "SW" to Color(0xFFF05138)
+    "rs" -> "RS" to Color(0xFFB7410E)
+    "go" -> "GO" to Color(0xFF00ADD8)
+    "dart" -> "DT" to Color(0xFF0175C2)
     else -> "TXT" to Color(0xFF777777)
 }
 
@@ -377,109 +669,232 @@ private fun EditorTabChip(tab: EditorTab, selected: Boolean, onClick: () -> Unit
 }
 
 @Composable
-private fun CodeEditor(tab: EditorTab, enabled: Boolean, modifier: Modifier) {
-    val onSurface = MaterialTheme.colorScheme.onSurface
-    val textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 21.sp, color = onSurface)
-    val lineCount = remember(tab.value.text) { tab.value.text.count { it == '\n' } + 1 }
-    val gutter = remember(lineCount) { (1..lineCount).joinToString("\n") }
-    val gutterWidth = (lineCount.toString().length * 9 + 14).dp
-    val verticalScroll = rememberScrollState()
-    val horizontalScroll = rememberScrollState()
-    Row(modifier.verticalScroll(verticalScroll)) {
-        Text(
-            gutter,
-            style = textStyle.copy(color = onSurface.copy(alpha = .55f), textAlign = TextAlign.End),
-            softWrap = false,
-            modifier = Modifier.width(gutterWidth).padding(start = 4.dp, end = 8.dp, top = 12.dp)
-        )
-        Box(Modifier.weight(1f).horizontalScroll(horizontalScroll)) {
-            BasicTextField(
-                value = tab.value,
-                onValueChange = { tab.value = it },
-                enabled = enabled,
-                textStyle = textStyle,
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrect = false),
-                modifier = Modifier.widthIn(min = 320.dp).heightIn(min = 420.dp).padding(top = 12.dp, end = 24.dp)
+private fun CodeEditor(
+    tab: EditorTab,
+    palette: EditorPalette,
+    fontSize: Int,
+    matches: List<IntRange>,
+    currentMatch: Int,
+    enabled: Boolean,
+    revealOffset: Int,
+    revealTick: Int,
+    onShortcut: (String) -> Boolean,
+    modifier: Modifier
+) {
+    val density = LocalDensity.current
+    val value = tab.value
+    val text = value.text
+    val textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = fontSize.sp, lineHeight = (fontSize * 1.6f).sp, color = palette.foreground)
+    val lineCount = remember(text) { text.count { it == '\n' } + 1 }
+    val cursorLine = remember(text, value.selection.end) { CodeEditing.lineAndColumn(text, value.selection.end).first }
+    val gutterText = remember(lineCount, cursorLine, palette) {
+        buildAnnotatedString {
+            for (line in 1..lineCount) {
+                if (line == cursorLine) withStyle(SpanStyle(color = palette.gutterActive)) { append(line.toString()) } else append(line.toString())
+                if (line < lineCount) append("\n")
+            }
+        }
+    }
+    val gutterWidth = (lineCount.toString().length * fontSize * 0.62f + 20f).dp
+    val vertical = rememberScrollState()
+    val horizontal = rememberScrollState()
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var viewportWidth by remember { mutableIntStateOf(0) }
+    var viewportHeight by remember { mutableIntStateOf(0) }
+    val topPad = 10.dp
+    val topPadPx = with(density) { topPad.toPx() }
+    val transformation = remember(tab.language, palette, matches, currentMatch) { SyntaxTransformation(tab.language, palette, matches, currentMatch) }
+    val minTextWidth = with(density) { (viewportWidth.toDp() - gutterWidth).coerceAtLeast(160.dp) }
+
+    LaunchedEffect(revealTick) {
+        val current = layout
+        if (revealTick > 0 && revealOffset >= 0 && current != null) {
+            val line = current.getLineForOffset(revealOffset.coerceIn(0, text.length))
+            val target = (current.getLineTop(line) + topPadPx - viewportHeight / 2f).toInt().coerceAtLeast(0)
+            vertical.animateScrollTo(target)
+        }
+    }
+
+    CompositionLocalProvider(LocalTextSelectionColors provides TextSelectionColors(handleColor = MaterialTheme.colorScheme.primary, backgroundColor = palette.selection)) {
+        Row(
+            modifier
+                .background(palette.background)
+                .onSizeChanged { viewportWidth = it.width; viewportHeight = it.height }
+                .verticalScroll(vertical)
+        ) {
+            Text(
+                gutterText,
+                style = textStyle.copy(color = palette.gutter, textAlign = TextAlign.End),
+                softWrap = false,
+                modifier = Modifier.width(gutterWidth).padding(end = 10.dp, top = topPad)
             )
+            Box(
+                Modifier
+                    .weight(1f)
+                    .horizontalScroll(horizontal)
+                    .drawBehind {
+                        val current = layout
+                        if (current != null && value.selection.collapsed) {
+                            val line = current.getLineForOffset(value.selection.end.coerceIn(0, text.length))
+                            val top = current.getLineTop(line) + topPadPx
+                            drawRect(palette.currentLine, Offset(0f, top), Size(size.width, current.getLineBottom(line) - current.getLineTop(line)))
+                        }
+                    }
+            ) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = { tab.typed(it) },
+                    enabled = enabled,
+                    textStyle = textStyle,
+                    cursorBrush = SolidColor(Color(0xFFAEAFAD).takeIf { palette.dark } ?: Color.Black),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrect = false),
+                    visualTransformation = transformation,
+                    onTextLayout = { layout = it },
+                    modifier = Modifier
+                        .widthIn(min = minTextWidth)
+                        .heightIn(min = 420.dp)
+                        .padding(top = topPad, end = 32.dp, bottom = 120.dp)
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            if (event.isCtrlPressed) {
+                                when (event.key) {
+                                    Key.S -> onShortcut("save")
+                                    Key.F -> onShortcut("find")
+                                    Key.G -> onShortcut("goto")
+                                    Key.Z -> onShortcut(if (event.isShiftPressed) "redo" else "undo")
+                                    Key.Y -> onShortcut("redo")
+                                    Key.Slash -> onShortcut("comment")
+                                    Key.D -> onShortcut("duplicate")
+                                    else -> false
+                                }
+                            } else if (event.key == Key.Tab) {
+                                onShortcut(if (event.isShiftPressed) "outdent" else "indent")
+                            } else {
+                                false
+                            }
+                        }
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SymbolBar(tab: EditorTab, onCopy: () -> Unit) {
-    val symbols = listOf("{", "}", "(", ")", "[", "]", ";", "=", ".", ",", "/", "\"", "'", "<", ">", ":", "!", "&", "|", "+", "-", "*", "_", "#", "\\")
-    Surface(color = MaterialTheme.colorScheme.background, border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            SymbolKey("Tab") { tab.value = insertText(tab.value, "    ") }
-            SymbolKey("//") { tab.value = toggleComment(tab.value, commentPrefix(tab.document.name)) }
-            SymbolKey("↑") { tab.value = moveLine(tab.value, -1) }
-            SymbolKey("↓") { tab.value = moveLine(tab.value, 1) }
-            IconButton(onClick = onCopy, modifier = Modifier.size(42.dp)) { Icon(Icons.Default.ContentCopy, "Copiar", modifier = Modifier.size(20.dp)) }
-            Box(Modifier.width(2.dp).height(26.dp).background(MaterialTheme.colorScheme.onSurface))
-            symbols.forEach { symbol -> SymbolKey(symbol) { tab.value = insertText(tab.value, symbol) } }
+private fun StatusBar(tab: EditorTab, palette: EditorPalette) {
+    val value = tab.value
+    val (line, column) = CodeEditing.lineAndColumn(value.text, value.selection.end)
+    val selected = value.selection.max - value.selection.min
+    val label = buildString {
+        append("Ln ").append(line).append(", Col ").append(column)
+        if (selected > 0) append(" (").append(selected).append(" selecionados)")
+    }
+    Row(Modifier.fillMaxWidth().background(palette.statusBar).padding(horizontal = 10.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = Color.White, fontSize = 11.sp, modifier = Modifier.weight(1f), maxLines = 1)
+        Text("Espaços: 4   UTF-8   " + tab.language.label, color = Color.White, fontSize = 11.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun CommandBars(tab: EditorTab, palette: EditorPalette, onCommand: (String) -> Boolean, onCopy: () -> Unit) {
+    val symbols = listOf("{", "}", "(", ")", "[", "]", ";", "=", ".", ",", "/", "\"", "'", "<", ">", ":", "!", "&", "|", "+", "-", "*", "_", "#", "\\", "$", "@", "?", "~", "^", "%")
+    Column(Modifier.fillMaxWidth().background(palette.panel).border(1.dp, palette.border)) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconCommand(Icons.AutoMirrored.Filled.Undo, "Desfazer", tab.undoDepth > 0) { onCommand("undo") }
+            IconCommand(Icons.AutoMirrored.Filled.Redo, "Refazer", tab.redoDepth > 0) { onCommand("redo") }
+            IconCommand(Icons.Default.Search, "Procurar", true) { onCommand("find") }
+            TextCommand("Ln") { onCommand("goto") }
+            TextCommand("Tab") { onCommand("indent") }
+            TextCommand("⇤") { onCommand("outdent") }
+            TextCommand("//") { onCommand("comment") }
+            IconCommand(Icons.Default.KeyboardArrowUp, "Cursor para cima", true) { tab.apply(CodeEditing.moveCursorLine(tab.value.toState(), -1)) }
+            IconCommand(Icons.Default.KeyboardArrowDown, "Cursor para baixo", true) { tab.apply(CodeEditing.moveCursorLine(tab.value.toState(), 1)) }
+            IconCommand(Icons.Default.ArrowUpward, "Subir linha", true) { tab.apply(CodeEditing.moveLines(tab.value.toState(), -1)) }
+            IconCommand(Icons.Default.ArrowDownward, "Descer linha", true) { tab.apply(CodeEditing.moveLines(tab.value.toState(), 1)) }
+            TextCommand("Dup") { onCommand("duplicate") }
+            TextCommand("Del") { tab.apply(CodeEditing.deleteLines(tab.value.toState())) }
+            IconCommand(Icons.Default.ContentCopy, "Copiar", true, onCopy)
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            symbols.forEach { symbol ->
+                TextCommand(symbol) {
+                    val state = tab.value.toState()
+                    val inserted = state.text.replaceRange(state.min, state.max, symbol)
+                    // Passa pelas mesmas regras do teclado (fecho de pares) quando é um único carácter.
+                    val raw = EditState(inserted, state.min + symbol.length, state.min + symbol.length)
+                    tab.typed(TextFieldValue(raw.text, TextRange(raw.start, raw.end)))
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun SymbolKey(label: String, onClick: () -> Unit) {
-    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 10.dp), modifier = Modifier.height(42.dp).widthIn(min = 38.dp)) {
-        Text(label, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+private fun IconCommand(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(42.dp)) {
+        Icon(icon, description, modifier = Modifier.size(20.dp))
     }
 }
 
-private fun insertText(value: TextFieldValue, insert: String): TextFieldValue {
-    val start = value.selection.min
-    val end = value.selection.max
-    val newText = value.text.replaceRange(start, end, insert)
-    return value.copy(text = newText, selection = TextRange(start + insert.length))
+@Composable
+private fun TextCommand(label: String, onClick: () -> Unit) {
+    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.height(42.dp).widthIn(min = 38.dp)) {
+        Text(label, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+    }
 }
 
-private fun commentPrefix(fileName: String): String = when (fileName.substringAfterLast('.', "").lowercase()) {
-    "py", "sh", "yml", "yaml", "toml", "properties", "rb" -> "#"
-    else -> "//"
+@Composable
+private fun PanelField(value: String, onChange: (String) -> Unit, placeholder: String, palette: EditorPalette, modifier: Modifier) {
+    Box(modifier.height(36.dp).background(palette.background).border(1.dp, palette.border).padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
+        BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            singleLine = true,
+            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = palette.foreground),
+            cursorBrush = SolidColor(palette.foreground),
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (value.isEmpty()) Text(placeholder, color = palette.foreground.copy(alpha = .45f), fontSize = 13.sp)
+    }
 }
 
-private fun toggleComment(value: TextFieldValue, prefix: String): TextFieldValue {
-    val text = value.text
-    val start = value.selection.min
-    val end = value.selection.max
-    val firstLineStart = text.lastIndexOf('\n', start - 1) + 1
-    val lastLineEnd = text.indexOf('\n', end).let { if (it < 0) text.length else it }
-    val block = text.substring(firstLineStart, lastLineEnd)
-    val lines = block.split('\n')
-    val allCommented = lines.filter { it.isNotBlank() }.all { it.trimStart().startsWith(prefix) }
-    val changed = lines.joinToString("\n") { line ->
-        if (line.isBlank()) {
-            line
-        } else {
-            val indent = line.length - line.trimStart().length
-            if (allCommented) line.substring(0, indent) + line.substring(indent).removePrefix(prefix).removePrefix(" ")
-            else line.substring(0, indent) + prefix + " " + line.substring(indent)
+@Composable
+private fun FindPanel(
+    session: EditorSession,
+    palette: EditorPalette,
+    matchCount: Int,
+    currentMatch: Int,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onQueryChanged: () -> Unit,
+    onReplace: () -> Unit,
+    onReplaceAll: () -> Unit,
+    onClose: () -> Unit
+) {
+    Column(Modifier.fillMaxWidth().background(palette.panel).padding(horizontal = 6.dp, vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            PanelField(session.query, { session.query = it; onQueryChanged() }, "Procurar", palette, Modifier.weight(1f))
+            Text(
+                if (session.query.isEmpty()) "" else if (matchCount == 0) "Sem resultados" else (currentMatch + 1).toString() + "/" + matchCount,
+                fontSize = 11.sp,
+                color = palette.foreground,
+                maxLines = 1
+            )
+            IconButton(onClick = onPrevious, enabled = matchCount > 0, modifier = Modifier.size(34.dp)) { Icon(Icons.Default.KeyboardArrowUp, "Resultado anterior") }
+            IconButton(onClick = onNext, enabled = matchCount > 0, modifier = Modifier.size(34.dp)) { Icon(Icons.Default.KeyboardArrowDown, "Próximo resultado") }
+            TextButton(onClick = { session.caseSensitive = !session.caseSensitive; onQueryChanged() }, contentPadding = PaddingValues(horizontal = 6.dp), modifier = Modifier.height(34.dp)) {
+                Text("Aa", fontWeight = FontWeight.Bold, color = if (session.caseSensitive) MaterialTheme.colorScheme.primary else palette.foreground.copy(alpha = .6f))
+            }
+            TextButton(onClick = { session.replaceOpen = !session.replaceOpen }, contentPadding = PaddingValues(horizontal = 6.dp), modifier = Modifier.height(34.dp)) { Text("⇄") }
+            IconButton(onClick = onClose, modifier = Modifier.size(34.dp)) { Icon(Icons.Default.Close, "Fechar procura") }
+        }
+        if (session.replaceOpen) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                PanelField(session.replacement, { session.replacement = it }, "Substituir por", palette, Modifier.weight(1f))
+                TextButton(onClick = onReplace, enabled = matchCount > 0, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.height(34.dp)) { Text("Substituir") }
+                TextButton(onClick = onReplaceAll, enabled = matchCount > 0, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.height(34.dp)) { Text("Todos") }
+            }
         }
     }
-    val newText = text.substring(0, firstLineStart) + changed + text.substring(lastLineEnd)
-    val position = (lastLineEnd + (changed.length - block.length)).coerceIn(0, newText.length)
-    return value.copy(text = newText, selection = TextRange(position))
-}
-
-private fun moveLine(value: TextFieldValue, delta: Int): TextFieldValue {
-    val text = value.text
-    val position = value.selection.end.coerceIn(0, text.length)
-    val lineStart = text.lastIndexOf('\n', position - 1) + 1
-    val column = position - lineStart
-    if (delta < 0) {
-        if (lineStart == 0) return value.copy(selection = TextRange(0))
-        val previousEnd = lineStart - 1
-        val previousStart = text.lastIndexOf('\n', previousEnd - 1) + 1
-        return value.copy(selection = TextRange(minOf(previousStart + column, previousEnd)))
-    }
-    val lineEnd = text.indexOf('\n', position).let { if (it < 0) text.length else it }
-    if (lineEnd >= text.length) return value.copy(selection = TextRange(text.length))
-    val nextStart = lineEnd + 1
-    val nextEnd = text.indexOf('\n', nextStart).let { if (it < 0) text.length else it }
-    return value.copy(selection = TextRange(minOf(nextStart + column, nextEnd)))
 }
 
 @Composable
