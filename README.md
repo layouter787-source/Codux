@@ -21,16 +21,29 @@ gradle assembleDebug
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. No APK is installed automatically.
 
-## GitHub Actions
+## GitHub Actions: debug and signed release artifacts
 
-`.github/workflows/android.yml` runs for relevant pushes to `main`, pull requests, and manual dispatch. It runs unit tests, assembles the debug APK, and uploads the APK and test reports. `.github/workflows/termux-bootstrap.yml` builds the ARM64 bootstrap from pinned Termux package sources and publishes its source manifest and assets. APK builds download the published bootstrap and verify its checksum before packaging it.
+`.github/workflows/android.yml` runs unit tests and builds an unsigned-by-release-configuration debug APK for pushes to `main`, pull requests, and manual dispatch. It uploads the debug APK and test reports.
+
+When the four repository Actions secrets listed below are configured, pushes to `main` and manual workflow runs also build and verify a signed release APK and a signed Android App Bundle (AAB). Pull-request builds never receive signing credentials. The signed files are uploaded together as the `codux-signed-release-<run number>` workflow artifact.
+
+Create a dedicated upload/release keystore and add these repository secrets under **Settings → Secrets and variables → Actions**:
+
+- `CODUX_KEYSTORE_BASE64`: the complete JKS keystore encoded as one Base64 string.
+- `CODUX_KEYSTORE_PASSWORD`: keystore password.
+- `CODUX_KEY_ALIAS`: key alias inside the keystore.
+- `CODUX_KEY_PASSWORD`: private-key password.
+
+Never commit the keystore, passwords, or Base64 value to the repository. Keep an offline backup of the keystore. The same signing key must be retained for future updates distributed outside Google Play. The release workflow sets `CODUX_PLAY=1`, builds the API 35 / ARM64 release variant, and uses the workflow run number as the monotonically increasing version code.
+
+The CI release job also requires the published `codux-termux-bootstrap-v2` release. The bootstrap workflow `.github/workflows/termux-bootstrap.yml` publishes that tag. APK builds verify the bootstrap checksum before packaging it.
 
 ## Integrated runtime and Codex CLI
 
-The terminal uses upstream Termux PTY/emulator libraries and a private Termux runtime inside Codux. The ARM64 bootstrap includes the Android-patched Codex CLI package maintained by the Termux project, so users do not need to install another terminal app or manually install the CLI. On first use, open **Terminal integrado** and run `codex login --device-auth`; complete the displayed device-code sign-in in a browser, then return to Codux and connect. Authentication remains the user’s own Codex account and is stored in Codux’s private app data. The runtime currently targets ARM64 Android devices; other ABIs do not receive the embedded bootstrap. The app targets API 28 so Android allows execution of the Termux binaries extracted into its private app data; this build is intended for direct APK installation, not Google Play distribution.
+The terminal uses upstream Termux PTY/emulator libraries and a private Termux runtime inside Codux. The ARM64 bootstrap includes the Android-patched Codex CLI package maintained by the Termux project, so users do not need to install another terminal app or manually install the CLI. On first use, open **Terminal integrado** and run `codex login --device-auth`; complete the displayed device-code sign-in in a browser, then return to Codux and connect. Authentication remains the user’s own Codex account and is stored in Codux’s private app data. The runtime currently targets ARM64 Android devices; other ABIs do not receive the embedded bootstrap. The app targets API 28 in the local/debug variant so Android allows execution of the Termux binaries extracted into its private app data. The signed CI release uses the API 35 compatibility variant and its native execution shim.
 
 Projects selected through SAF remain backed by Android document providers. A project path passed to a Linux process must also be accessible from the app's private runtime; a SAF URI alone is not a Linux filesystem path.
 
 ## Verification limits
 
-GitHub Actions verifies JVM tests and APK compilation. Device behavior including bootstrap extraction, PTY launch, SAF provider operations, and Codex App Server compatibility requires Android-device validation. Terminal commands run with the app's Android UID and are explicitly confirmed; the App Server is loopback-bound and capability-token authenticated.
+GitHub Actions verifies JVM tests, APK/AAB compilation, and artifact signatures. Device behavior including bootstrap extraction, PTY launch, SAF provider operations, and Codex App Server compatibility requires Android-device validation. Terminal commands run with the app's Android UID and are explicitly confirmed; the App Server is loopback-bound and capability-token authenticated.
