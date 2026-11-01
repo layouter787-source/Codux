@@ -19,8 +19,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,12 +39,17 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -90,7 +102,7 @@ internal class TerminalHolder {
     }
 }
 
-/** Terminal PTY do Termux dentro do prefixo privado do Codux, com a barra de teclas do desenho. */
+/** Terminal PTY do Termux dentro do prefixo privado do Codux, com linha de comandos e barra de teclas. */
 @Composable
 internal fun EmbeddedTermuxTerminal(
     runtime: EmbeddedTermuxRuntime,
@@ -139,7 +151,7 @@ private fun TerminalContent(
     DisposableEffect(session) {
         onDispose { client.view = null }
     }
-    val shape = RoundedCornerShape(26.dp)
+    val shape = RoundedCornerShape(14.dp)
     Column(modifier) {
         Box(
             Modifier
@@ -147,7 +159,7 @@ private fun TerminalContent(
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp)
                 .clip(shape)
-                .border(2.dp, MaterialTheme.colorScheme.onSurface, shape)
+                .border(1.dp, Color(0xFF3C3C3C), shape)
                 .background(Color.Black)
                 .padding(10.dp)
         ) {
@@ -168,7 +180,58 @@ private fun TerminalContent(
                 }
             )
         }
+        TerminalCommandBar(session)
         TerminalKeys(client, holder, session)
+    }
+}
+
+/**
+ * Linha de comandos com o teclado do Android. Escreve o comando no shell e prime Enter, por isso
+ * dá para executar comandos sem depender do teclado que o próprio terminal tenta abrir.
+ */
+@Composable
+private fun TerminalCommandBar(session: TerminalSession) {
+    var command by remember(session) { mutableStateOf("") }
+    val accent = Color(0xFF4EC9B0)
+    val shape = RoundedCornerShape(14.dp)
+    fun submit() {
+        session.write(command + "\r")
+        command = ""
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(shape)
+            .background(Color(0xFF1E1E1E))
+            .padding(start = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("\u276F", color = accent, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        BasicTextField(
+            value = command,
+            onValueChange = { command = it },
+            singleLine = true,
+            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = Color(0xFFD4D4D4)),
+            cursorBrush = SolidColor(accent),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrect = false, imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { submit() }),
+            modifier = Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 13.dp),
+            decorationBox = { inner ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (command.isEmpty()) {
+                        Text("Escreva um comando…", color = Color(0xFF6E7681), fontFamily = FontFamily.Monospace, fontSize = 14.sp, maxLines = 1)
+                    }
+                    inner()
+                }
+            }
+        )
+        TextButton(onClick = { session.write("\u0003") }, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.height(44.dp)) {
+            Text("^C", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = Color(0xFFCE9178))
+        }
+        IconButton(onClick = { submit() }) {
+            Icon(Icons.AutoMirrored.Filled.Send, "Executar comando", tint = accent)
+        }
     }
 }
 
