@@ -129,6 +129,8 @@ internal fun EditorScreen(
     val projectFiles = remember(context) { ProjectFiles(context.applicationContext) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val dark = isDarkSurface()
+    val colors = editorColors(dark)
     var showExplorer by remember { mutableStateOf(false) }
     var closeCandidate by remember { mutableStateOf<EditorTab?>(null) }
     var diffText by remember { mutableStateOf<String?>(null) }
@@ -142,6 +144,8 @@ internal fun EditorScreen(
     var deleteFile by remember { mutableStateOf<WorkspaceFile?>(null) }
     var moveFile by remember { mutableStateOf<WorkspaceFile?>(null) }
     val project = state.projects.firstOrNull { it.uri == state.workspaceUri }
+    val activeName = session.active?.document?.name
+    val language = remember(activeName) { activeName?.let { CodeSyntax.forFileName(it) } }
 
     LaunchedEffect(state.workspaceUri) {
         if (session.tabs.isEmpty() && state.workspaceUri != null) showExplorer = true
@@ -186,13 +190,14 @@ internal fun EditorScreen(
             }
         } else {
             val active = session.active
-            Surface(color = MaterialTheme.colorScheme.background, border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface), modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(horizontal = 6.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(color = colors.tabBar, contentColor = colors.text, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
                         session.tabs.forEachIndexed { index, tab ->
                             EditorTabChip(
                                 tab = tab,
                                 selected = index == session.activeIndex,
+                                colors = colors,
                                 onClick = { session.activeIndex = index },
                                 onClose = { if (tab.dirty) closeCandidate = tab else session.close(tab) }
                             )
@@ -216,14 +221,15 @@ internal fun EditorScreen(
                 }
             }
             if (active == null) {
-                Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.weight(1f).fillMaxWidth().background(colors.background).padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.Code, null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
-                    Text("Nenhum ficheiro aberto", Modifier.padding(top = 10.dp, bottom = 14.dp), style = MaterialTheme.typography.titleMedium)
+                    Text("Nenhum ficheiro aberto", Modifier.padding(top = 10.dp, bottom = 14.dp), style = MaterialTheme.typography.titleMedium, color = colors.text)
                     Button(onClick = { showExplorer = true }) { Text("Abrir ficheiros") }
                 }
             } else {
-                CodeEditor(active, !saving, Modifier.weight(1f).fillMaxWidth())
-                SymbolBar(active) {
+                CodeEditor(active, !saving, colors, language, dark, Modifier.weight(1f).fillMaxWidth())
+                EditorStatusBar(active, language, colors)
+                SymbolBar(active, colors) {
                     val value = active.value
                     val selection = value.selection
                     val text = if (!selection.collapsed) value.text.substring(selection.min, selection.max) else value.text
@@ -348,57 +354,69 @@ private fun languageBadge(name: String): Pair<String, Color> = when (name.substr
     else -> "TXT" to Color(0xFF777777)
 }
 
+/** Separador plano no estilo VS Code: o ativo funde-se com o editor e leva uma linha de realce por baixo. */
 @Composable
-private fun EditorTabChip(tab: EditorTab, selected: Boolean, onClick: () -> Unit, onClose: () -> Unit) {
-    val onSurface = MaterialTheme.colorScheme.onSurface
+private fun EditorTabChip(tab: EditorTab, selected: Boolean, colors: EditorColors, onClick: () -> Unit, onClose: () -> Unit) {
     val (badge, badgeColor) = languageBadge(tab.document.name)
-    val shape = RoundedCornerShape(22.dp)
-    Surface(
-        shape = shape,
-        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .35f) else MaterialTheme.colorScheme.background,
-        border = BorderStroke(2.dp, onSurface),
-        modifier = Modifier.height(42.dp).clip(shape).clickable(onClick = onClick)
+    Column(
+        Modifier
+            .height(40.dp)
+            .background(if (selected) colors.background else colors.tabIdle)
+            .clickable(onClick = onClick)
     ) {
-        Row(Modifier.padding(start = 10.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.background, border = BorderStroke(1.5.dp, badgeColor)) {
-                Text(badge, Modifier.padding(horizontal = 5.dp, vertical = 1.dp), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-            }
+        Row(Modifier.weight(1f).padding(start = 12.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(badge, color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
             Text(
                 (if (tab.dirty) "● " else "") + tab.document.name,
                 Modifier.padding(horizontal = 8.dp),
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
+                color = if (selected) colors.text else colors.gutter,
+                fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Icon(Icons.Default.Close, "Fechar " + tab.document.name, Modifier.size(18.dp).clickable(onClick = onClose))
+            Icon(Icons.Default.Close, "Fechar " + tab.document.name, Modifier.size(16.dp).clickable(onClick = onClose), tint = colors.gutter)
         }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+        )
     }
 }
 
 @Composable
-private fun CodeEditor(tab: EditorTab, enabled: Boolean, modifier: Modifier) {
-    val onSurface = MaterialTheme.colorScheme.onSurface
-    val textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 21.sp, color = onSurface)
+private fun CodeEditor(
+    tab: EditorTab,
+    enabled: Boolean,
+    colors: EditorColors,
+    language: SyntaxLanguage?,
+    dark: Boolean,
+    modifier: Modifier
+) {
+    val palette = if (dark) DarkSyntaxPalette else LightSyntaxPalette
+    val transformation = remember(language, dark) { SyntaxTransformation(language, palette) }
+    val textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 21.sp, color = colors.text)
     val lineCount = remember(tab.value.text) { tab.value.text.count { it == '\n' } + 1 }
     val gutter = remember(lineCount) { (1..lineCount).joinToString("\n") }
     val gutterWidth = (lineCount.toString().length * 9 + 14).dp
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
-    Row(modifier.verticalScroll(verticalScroll)) {
+    Row(modifier.background(colors.background).verticalScroll(verticalScroll)) {
         Text(
             gutter,
-            style = textStyle.copy(color = onSurface.copy(alpha = .55f), textAlign = TextAlign.End),
+            style = textStyle.copy(color = colors.gutter, textAlign = TextAlign.End),
             softWrap = false,
             modifier = Modifier.width(gutterWidth).padding(start = 4.dp, end = 8.dp, top = 12.dp)
         )
         Box(Modifier.weight(1f).horizontalScroll(horizontalScroll)) {
             BasicTextField(
                 value = tab.value,
-                onValueChange = { tab.value = it },
+                onValueChange = { tab.value = applyAutoIndent(tab.value, it, language?.colonIndent == true) },
                 enabled = enabled,
                 textStyle = textStyle,
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                visualTransformation = transformation,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrect = false),
                 modifier = Modifier.widthIn(min = 320.dp).heightIn(min = 420.dp).padding(top = 12.dp, end = 24.dp)
             )
@@ -406,26 +424,55 @@ private fun CodeEditor(tab: EditorTab, enabled: Boolean, modifier: Modifier) {
     }
 }
 
+/** Barra de estado no estilo VS Code: linha/coluna, linguagem e codificação. */
 @Composable
-private fun SymbolBar(tab: EditorTab, onCopy: () -> Unit) {
+private fun EditorStatusBar(tab: EditorTab, language: SyntaxLanguage?, colors: EditorColors) {
+    val text = tab.value.text
+    val cursor = tab.value.selection.end.coerceIn(0, text.length)
+    val position = remember(text, cursor) {
+        var line = 1
+        var lastBreak = -1
+        for (index in 0 until cursor) {
+            if (text[index] == '\n') {
+                line++
+                lastBreak = index
+            }
+        }
+        line to (cursor - lastBreak)
+    }
+    Row(
+        Modifier.fillMaxWidth().background(colors.statusBar).padding(horizontal = 12.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Text("Ln " + position.first + ", Col " + position.second, color = colors.statusText, fontSize = 11.sp, maxLines = 1)
+        Text(language?.label ?: "Texto simples", color = colors.statusText, fontSize = 11.sp, maxLines = 1)
+        Text("UTF-8", color = colors.statusText, fontSize = 11.sp, maxLines = 1)
+        Spacer(Modifier.weight(1f))
+        if (tab.dirty) Text("● por guardar", color = colors.statusText, fontSize = 11.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun SymbolBar(tab: EditorTab, colors: EditorColors, onCopy: () -> Unit) {
     val symbols = listOf("{", "}", "(", ")", "[", "]", ";", "=", ".", ",", "/", "\"", "'", "<", ">", ":", "!", "&", "|", "+", "-", "*", "_", "#", "\\")
-    Surface(color = MaterialTheme.colorScheme.background, border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = colors.tabBar, contentColor = colors.text, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            SymbolKey("Tab") { tab.value = insertText(tab.value, "    ") }
-            SymbolKey("//") { tab.value = toggleComment(tab.value, commentPrefix(tab.document.name)) }
-            SymbolKey("↑") { tab.value = moveLine(tab.value, -1) }
-            SymbolKey("↓") { tab.value = moveLine(tab.value, 1) }
+            SymbolKey("Tab", colors.text) { tab.value = insertText(tab.value, "    ") }
+            SymbolKey("//", colors.text) { tab.value = toggleComment(tab.value, commentPrefix(tab.document.name)) }
+            SymbolKey("↑", colors.text) { tab.value = moveLine(tab.value, -1) }
+            SymbolKey("↓", colors.text) { tab.value = moveLine(tab.value, 1) }
             IconButton(onClick = onCopy, modifier = Modifier.size(42.dp)) { Icon(Icons.Default.ContentCopy, "Copiar", modifier = Modifier.size(20.dp)) }
-            Box(Modifier.width(2.dp).height(26.dp).background(MaterialTheme.colorScheme.onSurface))
-            symbols.forEach { symbol -> SymbolKey(symbol) { tab.value = insertText(tab.value, symbol) } }
+            Box(Modifier.width(1.dp).height(26.dp).background(colors.gutter))
+            symbols.forEach { symbol -> SymbolKey(symbol, colors.text) { tab.value = insertText(tab.value, symbol) } }
         }
     }
 }
 
 @Composable
-private fun SymbolKey(label: String, onClick: () -> Unit) {
+private fun SymbolKey(label: String, tint: Color, onClick: () -> Unit) {
     TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 10.dp), modifier = Modifier.height(42.dp).widthIn(min = 38.dp)) {
-        Text(label, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+        Text(label, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = tint)
     }
 }
 
@@ -434,6 +481,25 @@ private fun insertText(value: TextFieldValue, insert: String): TextFieldValue {
     val end = value.selection.max
     val newText = value.text.replaceRange(start, end, insert)
     return value.copy(text = newText, selection = TextRange(start + insert.length))
+}
+
+/**
+ * Ao carregar em Enter, a nova linha herda a indentação da anterior e entra mais um nível
+ * depois de "{", "(" ou "[" (e de ":" em Python). Qualquer outra edição passa sem alterações.
+ */
+private fun applyAutoIndent(old: TextFieldValue, new: TextFieldValue, colonIndent: Boolean): TextFieldValue {
+    if (new.text.length != old.text.length + 1 || !new.selection.collapsed) return new
+    val cursor = new.selection.start
+    if (cursor < 1 || new.text[cursor - 1] != '\n') return new
+    val lineStart = new.text.lastIndexOf('\n', cursor - 2) + 1
+    val previous = new.text.substring(lineStart, cursor - 1)
+    val indent = previous.takeWhile { it == ' ' || it == '\t' }
+    val trimmed = previous.trimEnd()
+    val opensBlock = trimmed.endsWith("{") || trimmed.endsWith("(") || trimmed.endsWith("[") || (colonIndent && trimmed.endsWith(":"))
+    val insert = indent + (if (opensBlock) "    " else "")
+    if (insert.isEmpty()) return new
+    val text = new.text.substring(0, cursor) + insert + new.text.substring(cursor)
+    return new.copy(text = text, selection = TextRange(cursor + insert.length))
 }
 
 private fun commentPrefix(fileName: String): String = when (fileName.substringAfterLast('.', "").lowercase()) {
