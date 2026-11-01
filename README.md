@@ -27,14 +27,11 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. No APK 
 
 When the four repository Actions secrets listed below are configured, pushes to `main` and manual workflow runs also build and verify a signed release APK and a signed Android App Bundle (AAB). Pull-request builds never receive signing credentials. The signed files are uploaded together as the `codux-signed-release-<run number>` workflow artifact.
 
-Create a dedicated upload/release keystore and add these repository secrets under **Settings → Secrets and variables → Actions**:
+The first-time signing setup is automated by `.github/workflows/setup-signing.yml`. Because GitHub's built-in `GITHUB_TOKEN` cannot create repository Actions secrets, the owner must create a temporary fine-grained personal access token limited to this repository with **Secrets: read and write** and **Metadata: read-only**, then add it as the `CODUX_BOOTSTRAP_TOKEN` Actions secret. Also add `CODUX_BACKUP_PASSWORD` as an Actions secret (use a strong password of at least 20 characters and keep it safely). Run **Actions → Initialize Android release signing → Run workflow** once. The workflow generates a permanent JKS key, writes the four release-signing secrets through GitHub's encrypted Secrets API, creates an AES-256 encrypted recovery archive, uploads only that encrypted archive as a short-lived artifact, and deletes the temporary `CODUX_BOOTSTRAP_TOKEN` repository secret after success. It never uploads a plaintext keystore or prints passwords.
 
-- `CODUX_KEYSTORE_BASE64`: the complete JKS keystore encoded as one Base64 string.
-- `CODUX_KEYSTORE_PASSWORD`: keystore password.
-- `CODUX_KEY_ALIAS`: key alias inside the keystore.
-- `CODUX_KEY_PASSWORD`: private-key password.
+Download the `codux-signing-backup-encrypted` artifact promptly (it expires after 3 days), store it offline, and keep the `CODUX_BACKUP_PASSWORD` separately. Revoke the fine-grained token itself under **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens** after the setup succeeds; deleting the repository secret does not revoke the token. Do not commit the keystore, passwords, encrypted backup password, or Base64 value to the repository.
 
-Never commit the keystore, passwords, or Base64 value to the repository. Keep an offline backup of the keystore. The same signing key must be retained for future updates distributed outside Google Play. The release workflow sets `CODUX_PLAY=1`, builds the API 35 / ARM64 release variant, and uses the workflow run number as the monotonically increasing version code.
+The setup workflow refuses to overwrite an existing signing identity. Never generate a replacement key for an app already distributed with the original key.
 
 The CI release job also requires the published `codux-termux-bootstrap-v2` release. The bootstrap workflow `.github/workflows/termux-bootstrap.yml` publishes that tag. APK builds verify the bootstrap checksum before packaging it.
 
