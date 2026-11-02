@@ -1,0 +1,40 @@
+#!@PREFIX@/bin/bash
+# Instala o Ubuntu (arm64, via proot) e o Claude Code dentro dele.
+# O Claude Code para Linux é um binário glibc: não corre direto no Android, por isso corre no Ubuntu.
+# Precisa de internet (cerca de 300 MB na primeira vez).
+set -eu
+ROOTFS="${CODUX_UBUNTU:-$HOME/ubuntu}"
+BASE_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release"
+for tool in proot curl tar gzip; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "Falta '$tool' neste runtime. É preciso reconstruir o bootstrap com proot e curl (workflow Build embedded Termux runtime)." >&2
+    exit 1
+  }
+done
+export PROOT_TMP_DIR="${TMPDIR:-@PREFIX@/tmp}"
+export PROOT_NO_SECCOMP=1
+if [ ! -x "$ROOTFS/bin/bash" ]; then
+  echo "[1/3] A descarregar o Ubuntu (arm64)..."
+  name="$(curl -fsSL "$BASE_URL/" | grep -o 'ubuntu-base-24\.04\.[0-9]*-base-arm64\.tar\.gz' | sort -uV | tail -n 1)"
+  if [ -z "$name" ]; then
+    echo "Não encontrei o ficheiro do Ubuntu em $BASE_URL" >&2
+    exit 1
+  fi
+  mkdir -p "$ROOTFS"
+  curl -fL --progress-bar "$BASE_URL/$name" -o "$TMPDIR/ubuntu-base.tar.gz"
+  echo "[2/3] A extrair..."
+  proot --link2symlink tar -xzf "$TMPDIR/ubuntu-base.tar.gz" -C "$ROOTFS" --exclude='./dev/*' --exclude='dev/*' || true
+  rm -f "$TMPDIR/ubuntu-base.tar.gz"
+  if [ ! -x "$ROOTFS/bin/bash" ]; then
+    echo "A extração do Ubuntu falhou." >&2
+    exit 1
+  fi
+  printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' > "$ROOTFS/etc/resolv.conf"
+  mkdir -p "$ROOTFS/etc/apt/apt.conf.d"
+  echo 'APT::Sandbox::User "root";' > "$ROOTFS/etc/apt/apt.conf.d/99codux"
+fi
+echo "[3/3] A instalar o Claude Code no Ubuntu..."
+codux-ubuntu /bin/bash -lc 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y curl ca-certificates git ripgrep && curl -fsSL https://claude.ai/install.sh | bash'
+echo
+echo "Pronto. Executa: claude"
+echo "Na primeira vez ele mostra um endereço para entrar na tua conta; usa o botão Colar para colar o código."
