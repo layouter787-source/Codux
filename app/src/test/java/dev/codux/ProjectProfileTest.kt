@@ -21,6 +21,13 @@ class ProjectProfileTest {
     }
 
     @Test
+    fun detectsIosProject() {
+        val profile = ProjectProfile.detect(listOf("App.xcodeproj/project.pbxproj", "App/ContentView.swift"))
+        assertEquals(listOf("iOS"), profile.platforms)
+        assertEquals(listOf("Swift"), profile.stacks)
+    }
+
+    @Test
     fun detectsReactWebProject() {
         val profile = ProjectProfile.detect(listOf("package.json", "src/App.tsx", "src/index.css", "public/index.html"))
         assertEquals(listOf("Web"), profile.platforms)
