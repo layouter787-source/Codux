@@ -76,7 +76,8 @@ internal fun ChatScreen(
     onShowDiff: () -> Unit,
     onMenu: () -> Unit,
     onConnect: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onOpenClaude: () -> Unit
 ) {
     val messageListState = rememberLazyListState()
     LaunchedEffect(state.messages.lastOrNull()?.id, state.messages.lastOrNull()?.text, state.messages.size, state.isTurnRunning) {
@@ -85,7 +86,7 @@ internal fun ChatScreen(
     }
     Column(Modifier.fillMaxSize()) {
         CoduxHeader("Agente Codux", onMenu)
-        AgentCard(state.connected, state.connecting, onConnect, onDisconnect)
+        AgentCard(state.connected, state.connecting, onConnect, onDisconnect, onOpenClaude)
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (state.messages.isNotEmpty()) {
                 LazyColumn(state = messageListState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(26.dp)) {
@@ -164,11 +165,11 @@ internal fun ChatScreen(
 }
 
 /**
- * Cartão "Agente escolhido / Modelo" do desenho. O Codux só liga hoje ao Codex; o Claude Code aparece
- * na lista como "em breve" para não fingir uma integração que ainda não existe.
+ * Cartão "Agente escolhido / Modelo" do desenho. O chat liga ao Codex. O Claude Code corre no Terminal
+ * (num Ubuntu via proot), por isso escolher "Claude Code" abre o Terminal e executa `claude`.
  */
 @Composable
-private fun AgentCard(connected: Boolean, connecting: Boolean, onConnect: () -> Unit, onDisconnect: () -> Unit) {
+private fun AgentCard(connected: Boolean, connecting: Boolean, onConnect: () -> Unit, onDisconnect: () -> Unit, onOpenClaude: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp)) {
         Surface(
@@ -188,8 +189,8 @@ private fun AgentCard(connected: Boolean, connecting: Boolean, onConnect: () -> 
             }
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            DropdownMenuItem(text = { Text("Codex (ativo)") }, onClick = { menuOpen = false })
-            DropdownMenuItem(text = { Text("Claude Code — em breve") }, onClick = { menuOpen = false }, enabled = false)
+            DropdownMenuItem(text = { Text("Codex (chat)") }, onClick = { menuOpen = false })
+            DropdownMenuItem(text = { Text("Claude Code (abre no Terminal)") }, onClick = { menuOpen = false; onOpenClaude() })
         }
     }
 }
