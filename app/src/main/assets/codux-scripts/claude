@@ -1,0 +1,9 @@
+#!@PREFIX@/bin/bash
+# Claude Code (Linux arm64) a correr no Ubuntu do Codux, via proot.
+ROOTFS="${CODUX_UBUNTU:-$HOME/ubuntu}"
+bin="$ROOTFS/root/.local/bin/claude"
+if [ ! -e "$bin" ] && [ ! -L "$bin" ]; then
+  echo "O Claude Code ainda não está instalado. Executa: codux-setup-claude" >&2
+  exit 1
+fi
+exec codux-ubuntu /root/.local/bin/claude "$@"
