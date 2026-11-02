@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -72,6 +74,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -218,7 +221,7 @@ private fun CoduxApp(vm: CoduxViewModel = viewModel()) {
                 ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp)) {
                     Column(Modifier.fillMaxSize().padding(CoduxSpace.lg)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            androidx.compose.material3.Icon(Icons.Default.History, null, tint = colors.ai)
+                            Icon(Icons.Default.History, null, tint = colors.ai)
                             Text("Conversas", Modifier.padding(start = CoduxSpace.sm), style = MaterialTheme.typography.titleMedium, color = colors.text)
                         }
                         Spacer(Modifier.height(CoduxSpace.lg))
@@ -368,7 +371,7 @@ private fun CoduxApp(vm: CoduxViewModel = viewModel()) {
         if (showDiff) {
             val diff = state.diffPreview ?: state.currentDiff
             AlertDialog(onDismissRequest = { showDiff = false }, title = { Text("Alterações") },
-                text = { LazyColumn(Modifier.heightIn(max = 520.dp)) { item { Text(diff.ifBlank { "Ainda não há alterações para mostrar." }, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) } } },
+                text = { LazyColumn(Modifier.heightIn(max = 520.dp)) { item { Text(diff.ifBlank { "Ainda não há alterações para mostrar." }, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace) } } },
                 confirmButton = { TextButton(onClick = { showDiff = false }) { Text("Fechar") } })
         }
     }
