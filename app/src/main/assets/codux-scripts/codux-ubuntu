@@ -1,0 +1,31 @@
+#!@PREFIX@/bin/bash
+# Entra no Ubuntu (arm64) que o Codux instala em ~/ubuntu, usando proot.
+# Uso: codux-ubuntu [comando [argumentos...]]
+ROOTFS="${CODUX_UBUNTU:-$HOME/ubuntu}"
+if [ ! -x "$ROOTFS/bin/bash" ]; then
+  echo "O Ubuntu ainda não está instalado. Executa: codux-setup-claude" >&2
+  exit 1
+fi
+if ! command -v proot >/dev/null 2>&1; then
+  echo "O proot não está neste runtime. É preciso reconstruir o bootstrap com proot (workflow Build embedded Termux runtime)." >&2
+  exit 1
+fi
+export PROOT_TMP_DIR="${TMPDIR:-@PREFIX@/tmp}"
+# O seccomp do proot falha em vários Android recentes; sem ele funciona sempre, só um pouco mais devagar.
+export PROOT_NO_SECCOMP=1
+cwd="$(pwd)"
+workdir=/root
+binds=()
+case "$cwd" in
+  "$ROOTFS"|"$ROOTFS"/*) ;;
+  *) binds+=(-b "$cwd:$cwd"); workdir="$cwd" ;;
+esac
+if [ "$#" -eq 0 ]; then
+  set -- /bin/bash -l
+fi
+exec proot --link2symlink -0 --kill-on-exit -r "$ROOTFS" \
+  -b /dev -b /proc -b /sys -b /dev/urandom:/dev/random \
+  "${binds[@]}" -w "$workdir" \
+  /usr/bin/env -i HOME=/root TERM="${TERM:-xterm-256color}" LANG=C.UTF-8 \
+  PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  "$@"
