@@ -43,8 +43,9 @@ class EmbeddedTermuxRuntime(context: Context) {
     suspend fun installIfNeeded() = withContext(Dispatchers.IO) {
         installLock.withLock {
             if (isInstalled()) {
-                // Garante pastas que o runtime espera mesmo em instalações anteriores.
+                // Garante pastas e comandos auxiliares mesmo em instalações anteriores.
                 runCatching { prepareRuntimeDirectories(prefix) }
+                runCatching { installHelperScripts(prefix) }
                 runCatching { home.mkdirs() }
                 return@withContext
             }
@@ -100,11 +101,12 @@ class EmbeddedTermuxRuntime(context: Context) {
                     Os.symlink(target, link.absolutePath)
                 }
                 rewriteHardcodedPackagePaths(staging)
+                installHelperScripts(staging)
                 prepareRuntimeDirectories(staging)
                 val bootstrapInfo = File(staging, "etc/termux-bootstrap.version")
                 check(bootstrapInfo.parentFile?.mkdirs() == true || bootstrapInfo.parentFile?.isDirectory == true)
                 bootstrapInfo.writeText(BOOTSTRAP_MARKER)
-                // Somente o prefixo é substituído: home (credenciais do Codex, ~/.codex) é preservada.
+                // Somente o prefixo é substituído: home (credenciais do Codex, ~/.codex, ~/ubuntu) é preservada.
                 deleteOwnedTree(prefix)
                 check(staging.renameTo(prefix)) { "Não foi possível ativar o prefixo Termux." }
                 check(home.mkdirs() || home.isDirectory) { "Não foi possível criar o diretório pessoal do terminal." }
@@ -194,6 +196,24 @@ class EmbeddedTermuxRuntime(context: Context) {
                     val text = String(bytes, Charsets.UTF_8)
                     if (text.contains(oldPath)) file.writeText(text.replace(oldPath, newPath))
                 }
+        }
+    }
+
+    /**
+     * Comandos do Codux (codux-ubuntu, codux-setup-claude, claude) vêm dos assets e são gravados em bin/.
+     * O Claude Code só tem binário para Linux glibc, então corre num Ubuntu dentro do proot.
+     */
+    private fun installHelperScripts(root: File) {
+        val names = app.assets.list("codux-scripts").orEmpty()
+        if (names.isEmpty()) return
+        val bin = File(root, "bin")
+        check(bin.mkdirs() || bin.isDirectory) { "Não foi possível criar a pasta bin do runtime." }
+        names.forEach { name ->
+            val text = app.assets.open("codux-scripts/$name").use { it.readBytes().toString(Charsets.UTF_8) }
+                .replace("@PREFIX@", prefix.absolutePath)
+            val target = File(bin, name)
+            target.writeText(text)
+            Os.chmod(target.absolutePath, 448) // 0700
         }
     }
 

@@ -15,20 +15,25 @@ data class ProjectProfile(val platforms: List<String>, val stacks: List<String>)
 
             val android = hasName("androidmanifest.xml") ||
                 (hasName("build.gradle", "build.gradle.kts") && normalized.any { it.contains("/src/main/") || it.startsWith("app/") })
+            val ios = hasExt("pbxproj", "xcworkspace") || hasName("podfile", "info.plist", "appdelegate.swift", "contentview.swift")
             val web = hasName("package.json", "index.html", "vite.config.js", "vite.config.ts", "next.config.js") ||
                 hasExt("html", "jsx", "tsx", "vue", "svelte")
-            val pc = hasName("cargo.toml", "go.mod", "tauri.conf.json") || hasExt("sln", "csproj") ||
+            val pc = hasName("cargo.toml", "go.mod", "tauri.conf.json", "project.godot") || hasExt("sln", "csproj") ||
                 (!android && hasName("cmakelists.txt", "makefile") && hasExt("c", "cpp", "cc", "cxx", "h", "hpp"))
             val nativeCode = hasExt("cpp", "cc", "cxx", "hpp", "c")
 
             val platforms = buildList {
                 if (android) add("Android")
+                if (ios) add("iOS")
                 if (web) add("Web")
                 if (pc) add("PC")
             }
             val stacks = buildList {
+                if (hasName("pubspec.yaml")) add("Flutter")
+                if (hasExt("dart")) add("Dart")
                 if (hasExt("kt", "kts")) add("Kotlin")
                 if (hasExt("java")) add("Java")
+                if (hasExt("swift")) add("Swift")
                 // Código nativo dentro de um projeto Android: JNI + NDK (como no desenho: Kotlin+JNI+NDK+C++).
                 if (android && nativeCode) {
                     add("JNI")
@@ -42,6 +47,8 @@ data class ProjectProfile(val platforms: List<String>, val stacks: List<String>)
                 if (hasExt("py")) add("Python")
                 if (hasExt("rs") || hasName("cargo.toml")) add("Rust")
                 if (hasExt("go") || hasName("go.mod")) add("Go")
+                if (hasExt("php")) add("PHP")
+                if (hasExt("rb")) add("Ruby")
                 if (hasExt("html", "css")) add("HTML/CSS")
                 if (hasExt("cs")) add("C#")
             }.take(6)

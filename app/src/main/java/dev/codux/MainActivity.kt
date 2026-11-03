@@ -269,7 +269,12 @@ private fun CoduxApp(vm: CoduxViewModel = viewModel()) {
                             onShowDiff = { showDiff = true },
                             onMenu = openDrawer,
                             onConnect = connectToTermux,
-                            onDisconnect = vm::disconnect
+                            onDisconnect = vm::disconnect,
+                            onOpenClaude = {
+                                // O Claude Code corre no Terminal (Ubuntu via proot); o comando `claude` explica o que falta.
+                                terminalHolder.queueInput("claude\n")
+                                destination = Destination.TERMINAL
+                            }
                         )
                         Destination.PROJECTS -> ProjectsScreen(
                             state = state,
@@ -307,7 +312,7 @@ private fun CoduxApp(vm: CoduxViewModel = viewModel()) {
             }
         }
         if (showHelp) AlertDialog(onDismissRequest = { showHelp = false }, title = { Text("Ajuda") },
-            text = { Text("Escolhe uma pasta em Projetos, abre-a no Editor e liga o Codex em Agente. Para entrar na conta, abre o Terminal e executa codex login --device-auth.") },
+            text = { Text("Escolhe uma pasta em Projetos, abre-a no Editor e liga o Codex em Agente. Para entrar na conta do Codex, abre o Terminal e executa codex login --device-auth. Para usar o Claude Code, executa codux-setup-claude uma vez e depois claude.") },
             confirmButton = { TextButton(onClick = { showHelp = false }) { Text("Fechar") } })
         if (showAbout) AlertDialog(onDismissRequest = { showAbout = false }, title = { Text("Codux") },
             text = { Text("Cliente Android de desenvolvimento com IA, construído com Jetpack Compose Material 3.") },
@@ -435,6 +440,12 @@ private fun SettingsScreen(
                         }
                         TextButton(onClick = { AppServerLog.clear() }) { Text("Limpar registo") }
                     }
+                }
+            }
+            item {
+                SettingSection("CLAUDE CODE") {
+                    Text("O Claude Code só tem versão oficial para Linux de PC (glibc). No Codux ele corre dentro de um Ubuntu (proot) no Terminal.", style = MaterialTheme.typography.bodySmall)
+                    Text("1. Abre o Terminal.\n2. Executa codux-setup-claude (descarrega cerca de 300 MB, uma só vez).\n3. Executa claude e entra na tua conta com o código que ele mostrar.\nDepois, o cartão do agente em Agente abre o Claude Code diretamente.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
                 }
             }
             item {

@@ -48,6 +48,7 @@ import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 
 /**
  * Guarda a sessão do shell fora da composição: trocar de ecrã não mata o que está a correr
@@ -57,6 +58,7 @@ internal class TerminalHolder {
     var generation by mutableIntStateOf(0)
     private var client: EmbeddedTerminalClient? = null
     private var session: TerminalSession? = null
+    private var pendingInput: String? = null
 
     fun clientFor(context: Context): EmbeddedTerminalClient =
         client ?: EmbeddedTerminalClient(context.applicationContext).also { client = it }
@@ -77,6 +79,13 @@ internal class TerminalHolder {
         session = created
         return created
     }
+
+    /** Texto a escrever no terminal assim que ele abrir (usado por "Claude Code" no cartão do agente). */
+    fun queueInput(text: String) {
+        pendingInput = text
+    }
+
+    fun takePendingInput(): String? = pendingInput.also { pendingInput = null }
 
     fun restart() {
         session?.finishIfRunning()
@@ -139,6 +148,16 @@ private fun TerminalContent(
     DisposableEffect(session) {
         onDispose { client.view = null }
     }
+    // Abre o teclado ao entrar no terminal e escreve o comando pedido por outro ecrã (por exemplo "claude").
+    LaunchedEffect(session) {
+        delay(350)
+        client.showKeyboard()
+        val pending = holder.takePendingInput()
+        if (pending != null) {
+            delay(500)
+            session.write(pending)
+        }
+    }
     val shape = RoundedCornerShape(26.dp)
     Column(modifier) {
         Box(
@@ -155,11 +174,15 @@ private fun TerminalContent(
                 modifier = Modifier.fillMaxSize(),
                 factory = { viewContext ->
                     TerminalView(viewContext, null).apply {
+                        // Sem foco em modo toque o Android nunca mostra o teclado para esta view.
+                        isFocusable = true
+                        isFocusableInTouchMode = true
                         setTerminalViewClient(client)
                         // O renderizador do Termux usa pixels, não dp.
                         setTextSize((14f * viewContext.resources.displayMetrics.density).toInt())
                         client.view = this
                         attachSession(session)
+                        requestFocus()
                     }
                 },
                 update = { view ->
@@ -245,9 +268,11 @@ internal class EmbeddedTerminalClient(private val context: Context) : TerminalSe
 
     fun showKeyboard() {
         val target = view ?: return
+        target.isFocusable = true
+        target.isFocusableInTouchMode = true
         target.requestFocus()
         val input = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-        input?.showSoftInput(target, 0)
+        input?.showSoftInput(target, InputMethodManager.SHOW_IMPLICIT)
     }
 
     fun sendKey(keyCode: Int) {
