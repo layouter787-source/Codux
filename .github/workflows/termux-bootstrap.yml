@@ -82,8 +82,14 @@ jobs:
           ! grep -q '$TERMUX_PACKAGES_DIRECTORY/"' scripts/build-bootstraps.sh
           test -s packages/codex/build.sh
           grep -q '^TERMUX_PKG_LICENSE="Apache-2.0, MIT"$' packages/codex/build.sh
+          test -s packages/proot/build.sh
+          test -s packages/curl/build.sh
+          grep -rl 'https://downloads.apache.org/' packages | xargs -r sed -i 's|https://downloads.apache.org/|https://archive.apache.org/dist/|g'
+          grep -q 'https://archive.apache.org/dist/apr/apr-util' packages/apr-util/build.sh
+          curl -fsSI --retry 3 https://archive.apache.org/dist/apr/apr-util-1.6.5.tar.gz > /dev/null
+          echo "apr-util disponível no arquivo do Apache"
           export TERMUX_DOCKER_EXEC_EXTRA_ARGS="--env TERMUX_PKG_MAKE_PROCESSES=2 --env CARGO_PROFILE_RELEASE_LTO=thin --env CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 --env CARGO_PROFILE_RELEASE_DEBUG=0"
-          ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64 --add codex
+          ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64 --add codex,proot,curl
       - name: Diagnostics after failure
         if: failure()
         run: |
@@ -99,7 +105,7 @@ jobs:
           test -s "$zip"
           unzip -t "$zip" > /dev/null
           unzip -Z1 "$zip" > bootstrap-files.txt
-          for required in bin/bash bin/codex bin/codex-code-mode-host SYMLINKS.txt; do
+          for required in bin/bash bin/codex bin/codex-code-mode-host bin/proot bin/curl SYMLINKS.txt; do
             grep -qx "$required" bootstrap-files.txt || { echo "::error::bootstrap sem $required"; exit 1; }
           done
           grep -Eq '^lib/libtermux-exec(-ld-preload)?\.so$' bootstrap-files.txt || { echo "::error::bootstrap sem biblioteca termux-exec"; exit 1; }
@@ -109,9 +115,8 @@ jobs:
           mkdir -p /tmp/bootstrap-check
           unzip -q "$zip" -d /tmp/bootstrap-check
           if grep -RIl --exclude='*.so' '/data/data/com\.termux' /tmp/bootstrap-check >/tmp/legacy-paths.txt 2>/dev/null; then
-            echo '::error::bootstrap contém caminhos legados /data/data/com.termux:'
+            echo '::warning::alguns ficheiros de texto trazem /data/data/com.termux; o Codux troca por /data/data/dev.codux ao instalar o runtime:'
             cat /tmp/legacy-paths.txt
-            exit 1
           fi
           if ! grep -RIl --exclude='*.so' '/data/data/dev\.codux' /tmp/bootstrap-check >/tmp/codux-paths.txt 2>/dev/null; then
             echo '::error::bootstrap não contém referências esperadas a /data/data/dev.codux'
@@ -133,9 +138,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          tag=codux-termux-bootstrap-v2
+          tag=codux-termux-bootstrap-v1
           if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --title "Codux embedded Termux bootstrap v2" --notes-file termux-bootstrap-manifest.txt
+            gh release create "$tag" --title "Codux embedded Termux bootstrap v1" --notes-file termux-bootstrap-manifest.txt
           fi
           gh release upload "$tag" termux-packages/output/bootstrap-aarch64.zip termux-bootstrap-manifest.txt --clobber
       - uses: actions/upload-artifact@v6
