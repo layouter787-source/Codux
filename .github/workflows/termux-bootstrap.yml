@@ -36,6 +36,39 @@ jobs:
           fi
           free -h
           df -h / /mnt || true
+      - name: Point apr-util at a mirror that still serves it
+        working-directory: termux-packages
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^TERMUX_PKG_VERSION="\(.*\)"$/\1/p' packages/apr-util/build.sh)"
+          expected="$(sed -n 's/^TERMUX_PKG_SHA256=\(.*\)$/\1/p' packages/apr-util/build.sh)"
+          test -n "$version"
+          test -n "$expected"
+          good=""
+          for base in \
+            https://archive.apache.org/dist/apr \
+            https://downloads.apache.org/apr \
+            https://dlcdn.apache.org/apr \
+            https://www.apache.org/dist/apr \
+            https://ftp.tsukuba.wide.ad.jp/apache/apr \
+            https://mirrors.ocf.berkeley.edu/apache/apr \
+            https://apache.cs.uu.nl/apr
+          do
+            rm -f /tmp/apr-util.tar.gz
+            echo "A tentar $base/apr-util-$version.tar.gz"
+            if curl -fsSL --retry 2 --connect-timeout 20 --max-time 180 -o /tmp/apr-util.tar.gz "$base/apr-util-$version.tar.gz" \
+              && echo "$expected  /tmp/apr-util.tar.gz" | sha256sum -c -; then
+              good="$base"
+              break
+            fi
+          done
+          if [ -z "$good" ]; then
+            echo "::error::apr-util-$version.tar.gz indisponível (com o SHA-256 esperado) em todos os espelhos"
+            exit 1
+          fi
+          sed -i "s|^TERMUX_PKG_SRCURL=.*|TERMUX_PKG_SRCURL=\"$good/apr-util-\${TERMUX_PKG_VERSION}.tar.gz\"|" packages/apr-util/build.sh
+          grep -n '^TERMUX_PKG_SRCURL=' packages/apr-util/build.sh
+          echo "apr-util $version será descarregado de $good"
       - name: Build Termux bootstrap for Codux package paths
         working-directory: termux-packages
         run: |
@@ -86,7 +119,7 @@ jobs:
           fi
           codex_version="$(sed -n 's/^TERMUX_PKG_VERSION="\(.*\)"$/\1/p' termux-packages/packages/codex/build.sh)"
           test -n "$codex_version"
-          printf 'Codux package: dev.codux\nTermux packages source: 7e1a5db289ad89f97bb295a515ea3096b87eb1cd\nTermux app source reference: 8629e632fcb95da272221be327db653fb24befe9\nEmbedded Codex CLI package version: %s\nEmbedded Codex CLI license: Apache-2.0 and MIT; upstream notices are included by the Termux package\nBootstrap compatibility patch: use upstream libbz2 package, which provides the bzip2 bootstrap subpackage\nRunner output fix: write the archive into the Termux builder output directory\nLegacy package-path guard: reject /data/data/com.termux and require /data/data/dev.codux\n' "$codex_version" > termux-bootstrap-manifest.txt
+          printf 'Codux package: dev.codux\nTermux packages source: 7e1a5db289ad89f97bb295a515ea3096b87eb1cd\nTermux app source reference: 8629e632fcb95da272221be327db653fb24befe9\nEmbedded Codex CLI package version: %s\nEmbedded Codex CLI license: Apache-2.0 and MIT; upstream notices are included by the Termux package\nBootstrap compatibility patch: use upstream libbz2 package, which provides the bzip2 bootstrap subpackage\nRunner output fix: write the archive into the Termux builder output directory\nSource fix: apr-util is fetched from a mirror that still serves it, checked against the Termux SHA-256\nLegacy package-path guard: reject /data/data/com.termux and require /data/data/dev.codux\n' "$codex_version" > termux-bootstrap-manifest.txt
           (cd termux-packages/output && sha256sum bootstrap-aarch64.zip) >> termux-bootstrap-manifest.txt
       - name: Keep the built archive for inspection
         if: always()
