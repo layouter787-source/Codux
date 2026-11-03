@@ -51,6 +51,10 @@ jobs:
           grep -q '^TERMUX_PKG_LICENSE="Apache-2.0, MIT"$' packages/codex/build.sh
           test -s packages/proot/build.sh
           test -s packages/curl/build.sh
+          grep -rl 'https://downloads.apache.org/' packages | xargs -r sed -i 's|https://downloads.apache.org/|https://archive.apache.org/dist/|g'
+          grep -q 'https://archive.apache.org/dist/apr/apr-util' packages/apr-util/build.sh
+          curl -fsSI --retry 3 https://archive.apache.org/dist/apr/apr-util-1.6.5.tar.gz > /dev/null
+          echo "apr-util disponível no arquivo do Apache"
           export TERMUX_DOCKER_EXEC_EXTRA_ARGS="--env TERMUX_PKG_MAKE_PROCESSES=2 --env CARGO_PROFILE_RELEASE_LTO=thin --env CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 --env CARGO_PROFILE_RELEASE_DEBUG=0"
           ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64 --add codex,proot,curl
       - name: Diagnostics after failure
