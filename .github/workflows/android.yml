@@ -1,7 +1,8 @@
-name: Android APK
+name: Android builds
+
 on:
   push:
-    branches: [main]
+    branches: ['**']
     paths:
       - '.github/workflows/android.yml'
       - 'README.md'
@@ -22,39 +23,53 @@ on:
       - 'gradle/**'
       - 'third_party/**'
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   build:
+    name: Test and build debug APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.9'
+
       - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
+
       - name: Install Android SDK packages
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
+
       - name: Include embedded Termux bootstrap when published
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           mkdir -p app/src/main/assets
-          if gh release view codux-termux-bootstrap-v1 --repo "$GH_REPO" >/dev/null 2>&1; then
-            gh release download codux-termux-bootstrap-v1 --repo "$GH_REPO" --pattern bootstrap-aarch64.zip --pattern termux-bootstrap-manifest.txt --dir app/src/main/assets
+          # termux-bootstrap.yml publishes v2. Keep this tag in sync with that workflow.
+          if gh release view codux-termux-bootstrap-v2 --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release download codux-termux-bootstrap-v2 --repo "$GH_REPO" --pattern bootstrap-aarch64.zip --pattern termux-bootstrap-manifest.txt --dir app/src/main/assets
             cd app/src/main/assets
             grep " bootstrap-aarch64.zip$" termux-bootstrap-manifest.txt | sha256sum --check --status
             cd - >/dev/null
+          else
+            echo "::warning::Release codux-termux-bootstrap-v2 não encontrada; o APK será compilado sem o bootstrap incorporado."
           fi
+
       - name: Run unit tests
         run: gradle testDebugUnitTest --stacktrace
+
       - name: Upload unit test reports
         if: always()
         uses: actions/upload-artifact@v6
@@ -62,10 +77,121 @@ jobs:
           name: codux-unit-test-reports
           path: app/build/test-results/testDebugUnitTest/*.xml
           if-no-files-found: ignore
+
       - name: Build debug APK
-        run: gradle assembleDebug
-      - uses: actions/upload-artifact@v6
+        run: gradle assembleDebug --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v6
         with:
-          name: codux-debug-apk
+          name: codux-debug-apk-${{ github.run_number }}-${{ github.run_attempt }}
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
+
+  signed-release:
+    name: Build signed release APK and AAB
+    runs-on: ubuntu-latest
+    # Pushes to every branch and manual runs can sign. Pull-request events cannot access signing secrets.
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Check whether release signing is configured
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.CODUX_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.CODUX_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.CODUX_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.CODUX_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [[ -n "$KEYSTORE_B64" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets are configured."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Signed release skipped. Configure CODUX_KEYSTORE_BASE64, CODUX_KEYSTORE_PASSWORD, CODUX_KEY_ALIAS and CODUX_KEY_PASSWORD in repository Actions secrets."
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.signing.outputs.configured == 'true'
+
+      - uses: actions/setup-java@v6
+        if: steps.signing.outputs.configured == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v6
+        if: steps.signing.outputs.configured == 'true'
+        with:
+          gradle-version: '8.9'
+
+      - uses: android-actions/setup-android@v4
+        if: steps.signing.outputs.configured == 'true'
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        if: steps.signing.outputs.configured == 'true'
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
+
+      - name: Include and verify embedded Termux bootstrap
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/assets
+          gh release download codux-termux-bootstrap-v2 --repo "$GH_REPO" --pattern bootstrap-aarch64.zip --pattern termux-bootstrap-manifest.txt --dir app/src/main/assets
+          cd app/src/main/assets
+          grep " bootstrap-aarch64.zip$" termux-bootstrap-manifest.txt | sha256sum --check
+          cd - >/dev/null
+
+      - name: Restore release keystore
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.CODUX_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="$RUNNER_TEMP/codux-upload-key.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "CODUX_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK and AAB
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          CODUX_PLAY: '1'
+          CODUX_VERSION_CODE: ${{ github.run_number }}
+          CODUX_VERSION_NAME: 0.1.${{ github.run_number }}
+          CODUX_KEYSTORE_PASSWORD: ${{ secrets.CODUX_KEYSTORE_PASSWORD }}
+          CODUX_KEY_ALIAS: ${{ secrets.CODUX_KEY_ALIAS }}
+          CODUX_KEY_PASSWORD: ${{ secrets.CODUX_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          gradle assembleRelease bundleRelease --stacktrace
+
+      - name: Verify APK and AAB signatures
+        if: steps.signing.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$APK"
+          test -s "$AAB"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          jarsigner -verify "$AAB"
+          echo "Both release artifacts exist and their signatures were verified."
+
+      - name: Upload signed APK and AAB
+        if: steps.signing.outputs.configured == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: codux-signed-release-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
